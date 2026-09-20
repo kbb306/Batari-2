@@ -31,43 +31,43 @@ mainloop
   drawscreen
 
  if joy0left then BaudByte{0} = !BaudByte{0}
- if joy0left then goto waitleft
+ if joy0left then waitleft
  if joy0right then BaudByte{1} = !BaudByte{1}
- if joy0right then goto waitright
+ if joy0right then waitright
  if joy0up then BaudByte{2} = !BaudByte{2}
- if joy0up then goto waitup
+ if joy0up then waitup
  if joy0down then BaudByte{3} = !BaudByte{3}
- if joy0down then goto waitdown
+ if joy0down then waitdown
  if joy0fire then BaudByte{4} = !BaudByte{4}
- if joy0fire then goto waitfire
+ if joy0fire then waitfire
 
- if joy1fire then goto commit
+ if joy1fire then commit
 
  goto mainloop
 
 waitleft
  drawscreen
- if joy0left then goto waitleft
+ if joy0left then waitleft
  goto mainloop
 
 waitright
  drawscreen
- if joy0right then goto waitright
+ if joy0right then waitright
  goto mainloop
 
 waitup
  drawscreen
- if joy0up then goto waitup
+ if joy0up then waitup
  goto mainloop
 
 waitdown
  drawscreen
- if joy0down then goto waitdown
+ if joy0down then waitdown
  goto mainloop
 
 waitfire
  drawscreen
- if joy0fire then goto waitfire
+ if joy0fire then waitfire
  goto mainloop
 
 commit
@@ -75,19 +75,19 @@ commit
  BaudByte = 0
 
  if index = 27 then ShiftMode = 1
- if index = 27 then goto waitcommit
+ if index = 27 then waitcommit
  if index = 31 then ShiftMode = 0
- if index = 31 then goto waitcommit
+ if index = 31 then waitcommit
 
  if ShiftMode = 1 then index = index + 32
  TextIndex = index
 
 waitcommit
  drawscreen
- if joy1fire then goto waitcommit
+ if joy1fire then waitcommit
  goto mainloop
 
-data text_strings
+ data text_strings
  __sp, __T, __sp, __O, __sp, __H, __N, __M, __sp, __L, __R, __G
  __I, __P, __C, __V, __E, __Z, __D, __B, __S, __Y, __F, __X, __A
  __W, __J, __sp, __U, __Q, __K, __sp
