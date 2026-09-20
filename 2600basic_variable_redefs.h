@@ -1,5 +1,9 @@
 ; This file contains variable mapping and other information for the current project.
 
+blackout_seconds = q
+ 
+blackout_tick = p
+ 
 input_latch = o
  
 ai_second = n
