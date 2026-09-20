@@ -52,9 +52,9 @@ if [ "$?" -ne "0" ]
 fi
 if [ "$2" = "-O" ]
   then
-   postprocess$EXT -i "$bB" | optimize$EXT>$1.asm
+   postprocess$EXT -i "$bB" | optimize$EXT | sed -E 's/^([[:space:]]*include[[:space:]]+)([^"[:space:]]+\.asm)[[:space:]]*$/\1"\2"/' >$1.asm
   else
-   postprocess$EXT -i "$bB" >$1.asm
+   postprocess$EXT -i "$bB" | sed -E 's/^([[:space:]]*include[[:space:]]+)([^"[:space:]]+\.asm)[[:space:]]*$/\1"\2"/' >$1.asm
 fi
 dasm$DASMEXT $1.asm -I"$bB/includes" -f3 -l$1.lst -s$1.sym -o$1.bin | bbfilter$EXT
 if [ "$?" -ne "0" ]
