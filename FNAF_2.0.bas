@@ -263,14 +263,14 @@ __blackout
    ........XXX..........XXX........
    ........XXXXXXXXXXXXXXXX........
 end
-tick = tick + 1
-if tick = 60 then tick=0:seconds=seconds+1
+ tick = tick + 1
+ if tick = 60 then tick=0:seconds=seconds+1
 
-if seconds < 60 then COLUPF=$00
-if seconds >= 60 then COLUPF=$E4:gosub __Sound
+ if seconds < 60 then COLUPF=$00
+ if seconds >= 60 then COLUPF=$E4:gosub __Sound
 
-drawscreen
-if joy0fire then goto __Start else goto __blackout
+ drawscreen
+ if joy0fire then goto __Start else goto __blackout
  
 
 __Bonnie
@@ -345,18 +345,18 @@ ChicJump
 ;Chica
  if doorctl{2} then Chic_Tick=0:player1x=82:player1y=4:goto mainloop
  playfield:
-   .##############################.
-   .#............................#.
-   .#.....######.....######......#.
-   .#.....######.....######......#.
-   .#.....######.....######......#.
-   .#............................#.
-   .#............................#.
-   .#..........#######...........#.
-   .#............###.............#.
-   .#..........#######...........#.
-   .#............................#.
-   .##############################.
+   .XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX.
+   .X............................X.
+   .X.....XXXXXX.....XXXXXX......X.
+   .X.....XXXXXX.....XXXXXX......X.
+   .X.....XXXXXX.....XXXXXX......X.
+   .X............................X.
+   .X............................X.
+   .X..........XXXXXXX...........X.
+   .X............XXX.............X.
+   .X..........XXXXXXX...........X.
+   .X............................X.
+   .XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX.
 end
  COLUPF=$1C:gosub __Sound:drawscreen 
  if joy0fire then goto __Start else goto ChicJump
@@ -392,18 +392,18 @@ FoxJump
  bally = 81
  if collision(ball,missile0) then Fox_Tick=0:ballx=26:bally=18:goto mainloop
  playfield:
-   #####......................#####
-   #####......................#####
-   ..###......................###..
-   ...##########################...
-   ...#................#####...#...
-   ...#................#####...#...
-   ..#.........########.........#..
-   .#..........#..##..#..........#.
-   ..#..........######..........#..
-   ...#........#......#........#...
-   ...#........########........#...
-   ...##########################...
+   XXXXX......................XXXXX
+   XXXXX......................XXXXX
+   ..XXX......................XXX..
+   ...XXXXXXXXXXXXXXXXXXXXXXXXXX...
+   ...X................XXXXX...X...
+   ...X................XXXXX...X...
+   ..X.........XXXXXXXX.........X..
+   .X..........X..XX..X..........X.
+   ..X..........XXXXXX..........X..
+   ...X........X......X........X...
+   ...X........XXXXXXXX........X...
+   ...XXXXXXXXXXXXXXXXXXXXXXXXXX...
 end
 ; Fast Sprite Movement Here
  COLUPF=$34:gosub __Sound:drawscreen 
