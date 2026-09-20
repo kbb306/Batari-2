@@ -406,5 +406,12 @@ end
  COLUPF=$34:gosub __Sound:drawscreen 
  if joy0fire then goto __Start else goto FoxJump
 __Sound
-   ;This plays scream
+;This plays scream.
+   AUDV0 = 15
+   AUDC0 = 8
+   AUDF0 = rand & 15
+
+   AUDV1 = 15
+   AUDC1 = 4
+   AUDF1 = 3
    return
