@@ -1,10 +1,15 @@
 #!/bin/sh
 
-# do some quick sanity checking...
-
+# Resolve the bundled toolchain relative to this script so callers do not
+# need to set bB or modify PATH manually.
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 if [ ! "$bB" ] ; then
-  echo "### WARNING: the bB envionronment variable isn't set."
+  bB="$SCRIPT_DIR"
 fi
+PATH="$bB:$PATH"
+export bB PATH
+
+# do some quick sanity checking...
 
 OSTYPE=$(uname -s)
 ARCH=$(uname -m)
@@ -12,7 +17,6 @@ for EXT in "" .$OSTYPE.x86 .$OSTYPE.x64 .$OSTYPE.$ARCH .$OSTYPE ; do
   echo | preprocess$EXT 2>/dev/null >&2 && break
 done
 
-echo | preprocess$EXT 2>/dev/null >&2 && break
 if [ ! $? = 0 ] ; then
   echo "### ERROR: couldn't find bB binaries for $OSTYPE($ARCH). Exiting."
   exit 1

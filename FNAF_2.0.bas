@@ -18,6 +18,8 @@
  dim power_tick = m
  dim ai_second = n
  dim input_latch = o
+ dim blackout_tick = p
+ dim blackout_seconds = q
  doorctl = %00000000
  powertotal=255
  powerloss= 1
@@ -101,6 +103,10 @@ __Start
  power_tick = 0
  ai_second = 0
  input_latch = 0
+ blackout_tick = 0
+ blackout_seconds = 0
+ pfscorecolor = $B8
+ scorecolor = $0E
  pfscore1 = %10101010
  ; Initial map positions.  The room-state handlers below move each marker.
  player0x = 68
@@ -115,6 +121,11 @@ mainloop
  AUDV0 = 0
  AUDC0 = 0
  AUDF0 = 0
+ AUDV1 = 0
+ AUDC1 = 0
+ AUDF1 = 0
+ pfscorecolor = $B8
+ scorecolor = $0E
  COLUPF=$0E
  COLUP0 = $74
  COLUP1 = $1C
@@ -139,7 +150,7 @@ mainloop
     if powertotal <= 75 then pfscore1 = %00101010
     if powertotal <= 50 then pfscore1 = %00001010
     if powertotal <= 25 then pfscore1 = %00000010
-    if powertotal = 0 then pfscore1 = 0:COLUPF=$00:tick=0:seconds=0:goto __blackout
+    if powertotal = 0 then goto __EnterBlackout
 
     ; 60 frames = one second.  Every 90 seconds advances the hour once.
     tick = tick+1
@@ -170,7 +181,7 @@ __AIroll
     goto __AIstate
 
 __AIstate
-    if joy1fire then goto __blackout
+    if joy1fire then goto __EnterBlackout
 
     ; Explicit state dispatch avoids the old ON...GOTO state-0 trap and
     ; still lets the timing/random logic above run on every frame.
@@ -234,6 +245,10 @@ __NextNight
  tick=0
  power_tick=0
  ai_second=0
+ blackout_tick=0
+ blackout_seconds=0
+ pfscorecolor=$B8
+ scorecolor=$0E
  pfscore1=%10101010
  goto mainloop
 __power
@@ -246,9 +261,20 @@ __power
  if powertotal <= powerloss then powertotal=0 else powertotal=powertotal-powerloss
  goto mainloop
 
-__blackout
-;This is Freddy
+__EnterBlackout
+; Set up Freddy once, then keep the face hidden until the blackout timer expires.
+ pfscore1 = 0
+ pfscorecolor = $00
+ scorecolor = $00
+ COLUPF = $00
+ COLUP0 = $00
+ COLUP1 = $00
+ AUDV0 = 0
+ AUDV1 = 0
+ blackout_tick = 0
+ blackout_seconds = 0
 
+;This is Freddy
  playfield:
    XXXXXX.....................XXXXX
    XXXXXX.....................XXXXX
@@ -263,16 +289,20 @@ __blackout
    ........XXX..........XXX........
    ........XXXXXXXXXXXXXXXX........
 end
- seconds = 0
- tick = tick + 1
- if tick = 60 then tick=0:seconds=seconds+1
+ goto __blackout
 
- if seconds < 60 then COLUPF=$00
- if seconds >= 60 then COLUPF=$E4:gosub __Sound
+__blackout
+ blackout_tick = blackout_tick + 1
+ if blackout_tick = 60 then blackout_tick=0:blackout_seconds=blackout_seconds+1
+
+ ; pfscore's score kernel writes COLUPF from pfscorecolor, so keep BOTH
+ ; colors black during the wait to prevent the old $B8 green from leaking in.
+ if blackout_seconds < 60 then COLUPF=$00:pfscorecolor=$00
+ if blackout_seconds >= 60 then COLUPF=$E4:pfscorecolor=$E4:gosub __Sound
 
  drawscreen
- if joy0fire then goto __Start else goto __blackout
- 
+ if joy0fire then goto __Start
+ goto __blackout
 
 __Bonnie
    Bon_Tick = Bon_Tick +1
