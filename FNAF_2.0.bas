@@ -263,11 +263,14 @@ __blackout
    ........XXX..........XXX........
    ........XXXXXXXXXXXXXXXX........
 end
- tick = tick + 1
- if tick = 60 then tick=0:seconds=seconds+1
- if seconds = 60 then COLUPF = $E4:gosub __Sound:seconds=61
- drawscreen
- if joy0fire then goto __Start else goto __blackout
+tick = tick + 1
+if tick = 60 then tick=0:seconds=seconds+1
+
+if seconds < 60 then COLUPF=$00
+if seconds >= 60 then COLUPF=$E4:gosub __Sound
+
+drawscreen
+if joy0fire then goto __Start else goto __blackout
  
 
 __Bonnie
