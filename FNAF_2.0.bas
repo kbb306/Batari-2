@@ -263,6 +263,7 @@ __blackout
    ........XXX..........XXX........
    ........XXXXXXXXXXXXXXXX........
 end
+ seconds = 0
  tick = tick + 1
  if tick = 60 then tick=0:seconds=seconds+1
 
