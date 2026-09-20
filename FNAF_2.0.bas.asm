@@ -1,0 +1,6574 @@
+; Provided under the CC0 license. See the included LICENSE.txt for details.
+
+ processor 6502
+ include "vcs.h"
+ include "macro.h"
+ include "2600basic.h"
+ include "2600basic_variable_redefs.h"
+ ifconst bankswitch
+  if bankswitch == 8
+     ORG $1000
+     RORG $D000
+  endif
+  if bankswitch == 16
+     ORG $1000
+     RORG $9000
+  endif
+  if bankswitch == 32
+     ORG $1000
+     RORG $1000
+  endif
+  if bankswitch == 64
+     ORG $1000
+     RORG $1000
+  endif
+ else
+   ORG $F000
+ endif
+
+ ifconst bankswitch_hotspot
+ if bankswitch_hotspot = $083F ; 0840 bankswitching hotspot
+   .byte 0 ; stop unexpected bankswitches
+ endif
+ endif
+; Provided under the CC0 license. See the included LICENSE.txt for details.
+
+start
+ sei
+ cld
+ ldy #0
+ lda $D0
+ cmp #$2C               ;check RAM location #1
+ bne MachineIs2600
+ lda $D1
+ cmp #$A9               ;check RAM location #2
+ bne MachineIs2600
+ dey
+MachineIs2600
+ ldx #0
+ txa
+clearmem
+ inx
+ txs
+ pha
+ bne clearmem
+ sty temp1
+ ifnconst multisprite
+ ifconst pfrowheight
+ lda #pfrowheight
+ else
+ ifconst pfres
+ lda #(96/pfres)
+ else
+ lda #8
+ endif
+ endif
+ sta playfieldpos
+ endif
+ ldx #5
+initscore
+ lda #<scoretable
+ sta scorepointers,x 
+ dex
+ bpl initscore
+ lda #1
+ sta CTRLPF
+ ora INTIM
+ sta rand
+
+ ifconst multisprite
+   jsr multisprite_setup
+ endif
+
+ ifnconst bankswitch
+   jmp game
+ else
+   lda #>(game-1)
+   pha
+   lda #<(game-1)
+   pha
+   pha
+   pha
+   ldx #1
+   jmp BS_jsr
+ endif
+; Provided under the CC0 license. See the included LICENSE.txt for details.
+
+     ; This is a 2-line kernel!
+     ifnconst vertical_reflect
+kernel
+     endif
+     sta WSYNC
+     lda #255
+     sta TIM64T
+
+     lda #1
+     sta VDELBL
+     sta VDELP0
+     ldx ballheight
+     inx
+     inx
+     stx temp4
+     lda player1y
+     sta temp3
+
+     ifconst shakescreen
+         jsr doshakescreen
+     else
+         ldx missile0height
+         inx
+     endif
+
+     inx
+     stx stack1
+
+     lda bally
+     sta stack2
+
+     lda player0y
+     ldx #0
+     sta WSYNC
+     stx GRP0
+     stx GRP1
+     stx PF1L
+     stx PF2
+     stx CXCLR
+     ifconst readpaddle
+         stx paddle
+     else
+         sleep 3
+     endif
+
+     sta temp2,x
+
+     ;store these so they can be retrieved later
+     ifnconst pfres
+         ldx #128-44+(4-pfwidth)*12
+     else
+         ldx #132-pfres*pfwidth
+     endif
+
+     dec player0y
+
+     lda missile0y
+     sta temp5
+     lda missile1y
+     sta temp6
+
+     lda playfieldpos
+     sta temp1
+     
+     ifconst pfrowheight
+         lda #pfrowheight+2
+     else
+         ifnconst pfres
+             lda #10
+         else
+             lda #(96/pfres)+2 ; try to come close to the real size
+         endif
+     endif
+     clc
+     sbc playfieldpos
+     sta playfieldpos
+     jmp .startkernel
+
+.skipDrawP0
+     lda #0
+     tay
+     jmp .continueP0
+
+.skipDrawP1
+     lda #0
+     tay
+     jmp .continueP1
+
+.kerloop     ; enter at cycle 59??
+
+continuekernel
+     sleep 2
+continuekernel2
+     lda ballheight
+     
+     ifconst pfres
+         ldy playfield+pfres*pfwidth-132,x
+         sty PF1L ;3
+         ldy playfield+pfres*pfwidth-131-pfadjust,x
+         sty PF2L ;3
+         ldy playfield+pfres*pfwidth-129,x
+         sty PF1R ; 3 too early?
+         ldy playfield+pfres*pfwidth-130-pfadjust,x
+         sty PF2R ;3
+     else
+         ldy playfield-48+pfwidth*12+44-128,x
+         sty PF1L ;3
+         ldy playfield-48+pfwidth*12+45-128-pfadjust,x ;4
+         sty PF2L ;3
+         ldy playfield-48+pfwidth*12+47-128,x ;4
+         sty PF1R ; 3 too early?
+         ldy playfield-48+pfwidth*12+46-128-pfadjust,x;4
+         sty PF2R ;3
+     endif
+
+     ; should be playfield+$38 for width=2
+
+     dcp bally
+     rol
+     rol
+     ; rol
+     ; rol
+goback
+     sta ENABL 
+.startkernel
+     lda player1height ;3
+     dcp player1y ;5
+     bcc .skipDrawP1 ;2
+     ldy player1y ;3
+     lda (player1pointer),y ;5; player0pointer must be selected carefully by the compiler
+     ; so it doesn't cross a page boundary!
+
+.continueP1
+     sta GRP1 ;3
+
+     ifnconst player1colors
+         lda missile1height ;3
+         dcp missile1y ;5
+         rol;2
+         rol;2
+         sta ENAM1 ;3
+     else
+         lda (player1color),y
+         sta COLUP1
+         ifnconst playercolors
+             sleep 7
+         else
+             lda.w player0colorstore
+             sta COLUP0
+         endif
+     endif
+
+     ifconst pfres
+         lda playfield+pfres*pfwidth-132,x 
+         sta PF1L ;3
+         lda playfield+pfres*pfwidth-131-pfadjust,x 
+         sta PF2L ;3
+         lda playfield+pfres*pfwidth-129,x 
+         sta PF1R ; 3 too early?
+         lda playfield+pfres*pfwidth-130-pfadjust,x 
+         sta PF2R ;3
+     else
+         lda playfield-48+pfwidth*12+44-128,x ;4
+         sta PF1L ;3
+         lda playfield-48+pfwidth*12+45-128-pfadjust,x ;4
+         sta PF2L ;3
+         lda playfield-48+pfwidth*12+47-128,x ;4
+         sta PF1R ; 3 too early?
+         lda playfield-48+pfwidth*12+46-128-pfadjust,x;4
+         sta PF2R ;3
+     endif 
+     ; sleep 3
+
+     lda player0height
+     dcp player0y
+     bcc .skipDrawP0
+     ldy player0y
+     lda (player0pointer),y
+.continueP0
+     sta GRP0
+
+     ifnconst no_blank_lines
+         ifnconst playercolors
+             lda missile0height ;3
+             dcp missile0y ;5
+             sbc stack1
+             sta ENAM0 ;3
+         else
+             lda (player0color),y
+             sta player0colorstore
+             sleep 6
+         endif
+         dec temp1
+         bne continuekernel
+     else
+         dec temp1
+         beq altkernel2
+         ifconst readpaddle
+             ldy currentpaddle
+             lda INPT0,y
+             bpl noreadpaddle
+             inc paddle
+             jmp continuekernel2
+noreadpaddle
+             sleep 2
+             jmp continuekernel
+         else
+             ifnconst playercolors 
+                 ifconst PFcolors
+                     txa
+                     tay
+                     lda (pfcolortable),y
+                     ifnconst backgroundchange
+                         sta COLUPF
+                     else
+                         sta COLUBK
+                     endif
+                     jmp continuekernel
+                 else
+                     ifconst kernelmacrodef
+                         kernelmacro
+                     else
+                         sleep 12
+                     endif
+                 endif
+             else
+                 lda (player0color),y
+                 sta player0colorstore
+                 sleep 4
+             endif
+             jmp continuekernel
+         endif
+altkernel2
+         txa
+         ifnconst vertical_reflect
+             sbx #256-pfwidth
+         else
+             sbx #256-pfwidth/2
+         endif
+         bmi lastkernelline
+         ifconst pfrowheight
+             lda #pfrowheight
+         else
+             ifnconst pfres
+                 lda #8
+             else
+                 lda #(96/pfres) ; try to come close to the real size
+             endif
+         endif
+         sta temp1
+         jmp continuekernel
+     endif
+
+altkernel
+
+     ifconst PFmaskvalue
+         lda #PFmaskvalue
+     else
+         lda #0
+     endif
+     sta PF1L
+     sta PF2
+
+
+     ;sleep 3
+
+     ;28 cycles to fix things
+     ;minus 11=17
+
+     ; lax temp4
+     ; clc
+     txa
+     ifnconst vertical_reflect
+         sbx #256-pfwidth
+     else
+         sbx #256-pfwidth/2
+     endif
+
+     bmi lastkernelline
+
+     ifconst PFcolorandheight
+         ifconst pfres
+             ldy playfieldcolorandheight-131+pfres*pfwidth,x
+         else
+             ldy playfieldcolorandheight-87,x
+         endif
+         ifnconst backgroundchange
+             sty COLUPF
+         else
+             sty COLUBK
+         endif
+         ifconst pfres
+             lda playfieldcolorandheight-132+pfres*pfwidth,x
+         else
+             lda playfieldcolorandheight-88,x
+         endif
+         sta.w temp1
+     endif
+     ifconst PFheights
+         lsr
+         lsr
+         tay
+         lda (pfheighttable),y
+         sta.w temp1
+     endif
+     ifconst PFcolors
+         tay
+         lda (pfcolortable),y
+         ifnconst backgroundchange
+             sta COLUPF
+         else
+             sta COLUBK
+         endif
+         ifconst pfrowheight
+             lda #pfrowheight
+         else
+             ifnconst pfres
+                 lda #8
+             else
+                 lda #(96/pfres) ; try to come close to the real size
+             endif
+         endif
+         sta temp1
+     endif
+     ifnconst PFcolorandheight
+         ifnconst PFcolors
+             ifnconst PFheights
+                 ifnconst no_blank_lines
+                     ; read paddle 0
+                     ; lo-res paddle read
+                     ; bit INPT0
+                     ; bmi paddleskipread
+                     ; inc paddle0
+                     ;donepaddleskip
+                     sleep 10
+                     ifconst pfrowheight
+                         lda #pfrowheight
+                     else
+                         ifnconst pfres
+                             lda #8
+                         else
+                             lda #(96/pfres) ; try to come close to the real size
+                         endif
+                     endif
+                     sta temp1
+                 endif
+             endif
+         endif
+     endif
+     
+
+     lda ballheight
+     dcp bally
+     sbc temp4
+
+
+     jmp goback
+
+
+     ifnconst no_blank_lines
+lastkernelline
+         ifnconst PFcolors
+             sleep 10
+         else
+             ldy #124
+             lda (pfcolortable),y
+             sta COLUPF
+         endif
+
+         ifconst PFheights
+             ldx #1
+             ;sleep 4
+             sleep 3 ; this was over 1 cycle
+         else
+             ldx playfieldpos
+             ;sleep 3
+             sleep 2 ; this was over 1 cycle
+         endif
+
+         jmp enterlastkernel
+
+     else
+lastkernelline
+         
+         ifconst PFheights
+             ldx #1
+             ;sleep 5
+             sleep 4 ; this was over 1 cycle
+         else
+             ldx playfieldpos
+             ;sleep 4
+             sleep 3 ; this was over 1 cycle
+         endif
+
+         cpx #0
+         bne .enterfromNBL
+         jmp no_blank_lines_bailout
+     endif
+
+     if ((<*)>$d5)
+         align 256
+     endif
+     ; this is a kludge to prevent page wrapping - fix!!!
+
+.skipDrawlastP1
+     lda #0
+     tay ; added so we don't cross a page
+     jmp .continuelastP1
+
+.endkerloop     ; enter at cycle 59??
+     
+     nop
+
+.enterfromNBL
+     ifconst pfres
+         ldy.w playfield+pfres*pfwidth-4
+         sty PF1L ;3
+         ldy.w playfield+pfres*pfwidth-3-pfadjust
+         sty PF2L ;3
+         ldy.w playfield+pfres*pfwidth-1
+         sty PF1R ; possibly too early?
+         ldy.w playfield+pfres*pfwidth-2-pfadjust
+         sty PF2R ;3
+     else
+         ldy.w playfield-48+pfwidth*12+44
+         sty PF1L ;3
+         ldy.w playfield-48+pfwidth*12+45-pfadjust
+         sty PF2L ;3
+         ldy.w playfield-48+pfwidth*12+47
+         sty PF1R ; possibly too early?
+         ldy.w playfield-48+pfwidth*12+46-pfadjust
+         sty PF2R ;3
+     endif
+
+enterlastkernel
+     lda ballheight
+
+     ; tya
+     dcp bally
+     ; sleep 4
+
+     ; sbc stack3
+     rol
+     rol
+     sta ENABL 
+
+     lda player1height ;3
+     dcp player1y ;5
+     bcc .skipDrawlastP1
+     ldy player1y ;3
+     lda (player1pointer),y ;5; player0pointer must be selected carefully by the compiler
+     ; so it doesn't cross a page boundary!
+
+.continuelastP1
+     sta GRP1 ;3
+
+     ifnconst player1colors
+         lda missile1height ;3
+         dcp missile1y ;5
+     else
+         lda (player1color),y
+         sta COLUP1
+     endif
+
+     dex
+     ;dec temp4 ; might try putting this above PF writes
+     beq endkernel
+
+
+     ifconst pfres
+         ldy.w playfield+pfres*pfwidth-4
+         sty PF1L ;3
+         ldy.w playfield+pfres*pfwidth-3-pfadjust
+         sty PF2L ;3
+         ldy.w playfield+pfres*pfwidth-1
+         sty PF1R ; possibly too early?
+         ldy.w playfield+pfres*pfwidth-2-pfadjust
+         sty PF2R ;3
+     else
+         ldy.w playfield-48+pfwidth*12+44
+         sty PF1L ;3
+         ldy.w playfield-48+pfwidth*12+45-pfadjust
+         sty PF2L ;3
+         ldy.w playfield-48+pfwidth*12+47
+         sty PF1R ; possibly too early?
+         ldy.w playfield-48+pfwidth*12+46-pfadjust
+         sty PF2R ;3
+     endif
+
+     ifnconst player1colors
+         rol;2
+         rol;2
+         sta ENAM1 ;3
+     else
+         ifnconst playercolors
+             sleep 7
+         else
+             lda.w player0colorstore
+             sta COLUP0
+         endif
+     endif
+     
+     lda.w player0height
+     dcp player0y
+     bcc .skipDrawlastP0
+     ldy player0y
+     lda (player0pointer),y
+.continuelastP0
+     sta GRP0
+
+
+
+     ifnconst no_blank_lines
+         lda missile0height ;3
+         dcp missile0y ;5
+         sbc stack1
+         sta ENAM0 ;3
+         jmp .endkerloop
+     else
+         ifconst readpaddle
+             ldy currentpaddle
+             lda INPT0,y
+             bpl noreadpaddle2
+             inc paddle
+             jmp .endkerloop
+noreadpaddle2
+             sleep 4
+             jmp .endkerloop
+         else ; no_blank_lines and no paddle reading
+             pla
+             pha ; 14 cycles in 4 bytes
+             pla
+             pha
+             ; sleep 14
+             jmp .endkerloop
+         endif
+     endif
+
+
+     ; ifconst donepaddleskip
+         ;paddleskipread
+         ; this is kind of lame, since it requires 4 cycles from a page boundary crossing
+         ; plus we get a lo-res paddle read
+         ; bmi donepaddleskip
+     ; endif
+
+.skipDrawlastP0
+     lda #0
+     tay
+     jmp .continuelastP0
+
+     ifconst no_blank_lines
+no_blank_lines_bailout
+         ldx #0
+     endif
+
+endkernel
+     ; 6 digit score routine
+     stx PF1
+     stx PF2
+     stx PF0
+     clc
+
+     ifconst pfrowheight
+         lda #pfrowheight+2
+     else
+         ifnconst pfres
+             lda #10
+         else
+             lda #(96/pfres)+2 ; try to come close to the real size
+         endif
+     endif
+
+     sbc playfieldpos
+     sta playfieldpos
+     txa
+
+     ifconst shakescreen
+         bit shakescreen
+         bmi noshakescreen2
+         ldx #$3D
+noshakescreen2
+     endif
+
+     sta WSYNC,x
+
+     ; STA WSYNC ;first one, need one more
+     sta REFP0
+     sta REFP1
+     STA GRP0
+     STA GRP1
+     ; STA PF1
+     ; STA PF2
+     sta HMCLR
+     sta ENAM0
+     sta ENAM1
+     sta ENABL
+
+     lda temp2 ;restore variables that were obliterated by kernel
+     sta player0y
+     lda temp3
+     sta player1y
+     ifnconst player1colors
+         lda temp6
+         sta missile1y
+     endif
+     ifnconst playercolors
+         ifnconst readpaddle
+             lda temp5
+             sta missile0y
+         endif
+     endif
+     lda stack2
+     sta bally
+
+     ; strangely, this isn't required any more. might have
+     ; resulted from the no_blank_lines score bounce fix
+     ;ifconst no_blank_lines
+         ;sta WSYNC
+     ;endif
+
+     lda INTIM
+     clc
+     ifnconst vblank_time
+         adc #43+12+87
+     else
+         adc #vblank_time+12+87
+
+     endif
+     ; sta WSYNC
+     sta TIM64T
+
+     ifconst minikernel
+         jsr minikernel
+     endif
+
+     ; now reassign temp vars for score pointers
+
+     ; score pointers contain:
+     ; score1-5: lo1,lo2,lo3,lo4,lo5,lo6
+     ; swap lo2->temp1
+     ; swap lo4->temp3
+     ; swap lo6->temp5
+     ifnconst noscore
+         lda scorepointers+1
+         ; ldy temp1
+         sta temp1
+         ; sty scorepointers+1
+
+         lda scorepointers+3
+         ; ldy temp3
+         sta temp3
+         ; sty scorepointers+3
+
+
+         sta HMCLR
+         tsx
+         stx stack1 
+         ldx #$E0
+         stx HMP0
+
+         LDA scorecolor 
+         STA COLUP0
+         STA COLUP1
+         ifconst scorefade
+             STA stack2
+         endif
+         ifconst pfscore
+             lda pfscorecolor
+             sta COLUPF
+         endif
+         sta WSYNC
+         ldx #0
+         STx GRP0
+         STx GRP1 ; seems to be needed because of vdel
+
+         lda scorepointers+5
+         ; ldy temp5
+         sta temp5,x
+         ; sty scorepointers+5
+         lda #>scoretable
+         sta scorepointers+1
+         sta scorepointers+3
+         sta scorepointers+5
+         sta temp2
+         sta temp4
+         sta temp6
+         LDY #7
+         STY VDELP0
+         STA RESP0
+         STA RESP1
+
+
+         LDA #$03
+         STA NUSIZ0
+         STA NUSIZ1
+         STA VDELP1
+         LDA #$F0
+         STA HMP1
+         lda (scorepointers),y
+         sta GRP0
+         STA HMOVE ; cycle 73 ?
+         jmp beginscore
+
+
+         if ((<*)>$d4)
+             align 256 ; kludge that potentially wastes space! should be fixed!
+         endif
+
+loop2
+         lda (scorepointers),y ;+5 68 204
+         sta GRP0 ;+3 71 213 D1 -- -- --
+         ifconst pfscore
+             lda.w pfscore1
+             sta PF1
+         else
+             ifconst scorefade
+                 sleep 2
+                 dec stack2 ; decrement the temporary scorecolor
+             else
+                 sleep 7
+             endif
+         endif
+         ; cycle 0
+beginscore
+         lda (scorepointers+$8),y ;+5 5 15
+         sta GRP1 ;+3 8 24 D1 D1 D2 --
+         lda (scorepointers+$6),y ;+5 13 39
+         sta GRP0 ;+3 16 48 D3 D1 D2 D2
+         lax (scorepointers+$2),y ;+5 29 87
+         txs
+         lax (scorepointers+$4),y ;+5 36 108
+         ifconst scorefade
+             lda stack2
+         else
+             sleep 3
+         endif
+
+         ifconst pfscore
+             lda pfscore2
+             sta PF1
+         else
+             ifconst scorefade
+                 sta COLUP0
+                 sta COLUP1
+             else
+                 sleep 6
+             endif
+         endif
+
+         lda (scorepointers+$A),y ;+5 21 63
+         stx GRP1 ;+3 44 132 D3 D3 D4 D2!
+         tsx
+         stx GRP0 ;+3 47 141 D5 D3! D4 D4
+         sta GRP1 ;+3 50 150 D5 D5 D6 D4!
+         sty GRP0 ;+3 53 159 D4* D5! D6 D6
+         dey
+         bpl loop2 ;+2 60 180
+
+         ldx stack1 
+         txs
+         ; lda scorepointers+1
+         ldy temp1
+         ; sta temp1
+         sty scorepointers+1
+
+         LDA #0 
+         sta PF1
+         STA GRP0
+         STA GRP1
+         STA VDELP0
+         STA VDELP1;do we need these
+         STA NUSIZ0
+         STA NUSIZ1
+
+         ; lda scorepointers+3
+         ldy temp3
+         ; sta temp3
+         sty scorepointers+3
+
+         ; lda scorepointers+5
+         ldy temp5
+         ; sta temp5
+         sty scorepointers+5
+     endif ;noscore
+    ifconst readpaddle
+        lda #%11000010
+    else
+        ifconst qtcontroller
+            lda qtcontroller
+            lsr    ; bit 0 in carry
+            lda #4
+            ror    ; carry into top of A
+        else
+            lda #2
+        endif ; qtcontroller
+    endif ; readpaddle
+ sta WSYNC
+ sta VBLANK
+ RETURN
+     ifconst shakescreen
+doshakescreen
+         bit shakescreen
+         bmi noshakescreen
+         sta WSYNC
+noshakescreen
+         ldx missile0height
+         inx
+         rts
+     endif
+
+; Provided under the CC0 license. See the included LICENSE.txt for details.
+
+; playfield drawing routines
+; you get a 32x12 bitmapped display in a single color :)
+; 0-31 and 0-11
+
+pfclear ; clears playfield - or fill with pattern
+ ifconst pfres
+ ldx #pfres*pfwidth-1
+ else
+ ldx #47-(4-pfwidth)*12 ; will this work?
+ endif
+pfclear_loop
+ ifnconst superchip
+ sta playfield,x
+ else
+ sta playfield-128,x
+ endif
+ dex
+ bpl pfclear_loop
+ RETURN
+ 
+setuppointers
+ stx temp2 ; store on.off.flip value
+ tax ; put x-value in x 
+ lsr
+ lsr
+ lsr ; divide x pos by 8 
+ sta temp1
+ tya
+ asl
+ if pfwidth=4
+  asl ; multiply y pos by 4
+ endif ; else multiply by 2
+ clc
+ adc temp1 ; add them together to get actual memory location offset
+ tay ; put the value in y
+ lda temp2 ; restore on.off.flip value
+ rts
+
+pfread
+;x=xvalue, y=yvalue
+ jsr setuppointers
+ lda setbyte,x
+ and playfield,y
+ eor setbyte,x
+; beq readzero
+; lda #1
+; readzero
+ RETURN
+
+pfpixel
+;x=xvalue, y=yvalue, a=0,1,2
+ jsr setuppointers
+
+ ifconst bankswitch
+ lda temp2 ; load on.off.flip value (0,1, or 2)
+ beq pixelon_r  ; if "on" go to on
+ lsr
+ bcs pixeloff_r ; value is 1 if true
+ lda playfield,y ; if here, it's "flip"
+ eor setbyte,x
+ ifconst superchip
+ sta playfield-128,y
+ else
+ sta playfield,y
+ endif
+ RETURN
+pixelon_r
+ lda playfield,y
+ ora setbyte,x
+ ifconst superchip
+ sta playfield-128,y
+ else
+ sta playfield,y
+ endif
+ RETURN
+pixeloff_r
+ lda setbyte,x
+ eor #$ff
+ and playfield,y
+ ifconst superchip
+ sta playfield-128,y
+ else
+ sta playfield,y
+ endif
+ RETURN
+
+ else
+ jmp plotpoint
+ endif
+
+pfhline
+;x=xvalue, y=yvalue, a=0,1,2, temp3=endx
+ jsr setuppointers
+ jmp noinc
+keepgoing
+ inx
+ txa
+ and #7
+ bne noinc
+ iny
+noinc
+ jsr plotpoint
+ cpx temp3
+ bmi keepgoing
+ RETURN
+
+pfvline
+;x=xvalue, y=yvalue, a=0,1,2, temp3=endx
+ jsr setuppointers
+ sty temp1 ; store memory location offset
+ inc temp3 ; increase final x by 1 
+ lda temp3
+ asl
+ if pfwidth=4
+   asl ; multiply by 4
+ endif ; else multiply by 2
+ sta temp3 ; store it
+ ; Thanks to Michael Rideout for fixing a bug in this code
+ ; right now, temp1=y=starting memory location, temp3=final
+ ; x should equal original x value
+keepgoingy
+ jsr plotpoint
+ iny
+ iny
+ if pfwidth=4
+   iny
+   iny
+ endif
+ cpy temp3
+ bmi keepgoingy
+ RETURN
+
+plotpoint
+ lda temp2 ; load on.off.flip value (0,1, or 2)
+ beq pixelon  ; if "on" go to on
+ lsr
+ bcs pixeloff ; value is 1 if true
+ lda playfield,y ; if here, it's "flip"
+ eor setbyte,x
+  ifconst superchip
+ sta playfield-128,y
+ else
+ sta playfield,y
+ endif
+ rts
+pixelon
+ lda playfield,y
+ ora setbyte,x
+ ifconst superchip
+ sta playfield-128,y
+ else
+ sta playfield,y
+ endif
+ rts
+pixeloff
+ lda setbyte,x
+ eor #$ff
+ and playfield,y
+ ifconst superchip
+ sta playfield-128,y
+ else
+ sta playfield,y
+ endif
+ rts
+
+setbyte
+ ifnconst pfcenter
+ .byte $80
+ .byte $40
+ .byte $20
+ .byte $10
+ .byte $08
+ .byte $04
+ .byte $02
+ .byte $01
+ endif
+ .byte $01
+ .byte $02
+ .byte $04
+ .byte $08
+ .byte $10
+ .byte $20
+ .byte $40
+ .byte $80
+ .byte $80
+ .byte $40
+ .byte $20
+ .byte $10
+ .byte $08
+ .byte $04
+ .byte $02
+ .byte $01
+ .byte $01
+ .byte $02
+ .byte $04
+ .byte $08
+ .byte $10
+ .byte $20
+ .byte $40
+ .byte $80
+; Provided under the CC0 license. See the included LICENSE.txt for details.
+
+pfscroll ;(a=0 left, 1 right, 2 up, 4 down, 6=upup, 12=downdown)
+ bne notleft
+;left
+ ifconst pfres
+ ldx #pfres*4
+ else
+ ldx #48
+ endif
+leftloop
+ lda playfield-1,x
+ lsr
+
+ ifconst superchip
+ lda playfield-2,x
+ rol
+ sta playfield-130,x
+ lda playfield-3,x
+ ror
+ sta playfield-131,x
+ lda playfield-4,x
+ rol
+ sta playfield-132,x
+ lda playfield-1,x
+ ror
+ sta playfield-129,x
+ else
+ rol playfield-2,x
+ ror playfield-3,x
+ rol playfield-4,x
+ ror playfield-1,x
+ endif
+
+ txa
+ sbx #4
+ bne leftloop
+ RETURN
+
+notleft
+ lsr
+ bcc notright
+;right
+
+ ifconst pfres
+ ldx #pfres*4
+ else
+ ldx #48
+ endif
+rightloop
+ lda playfield-4,x
+ lsr
+ ifconst superchip
+ lda playfield-3,x
+ rol
+ sta playfield-131,x
+ lda playfield-2,x
+ ror
+ sta playfield-130,x
+ lda playfield-1,x
+ rol
+ sta playfield-129,x
+ lda playfield-4,x
+ ror
+ sta playfield-132,x
+ else
+ rol playfield-3,x
+ ror playfield-2,x
+ rol playfield-1,x
+ ror playfield-4,x
+ endif
+ txa
+ sbx #4
+ bne rightloop
+  RETURN
+
+notright
+ lsr
+ bcc notup
+;up
+ lsr
+ bcc onedecup
+ dec playfieldpos
+onedecup
+ dec playfieldpos
+ beq shiftdown 
+ bpl noshiftdown2 
+shiftdown
+  ifconst pfrowheight
+ lda #pfrowheight
+ else
+ ifnconst pfres
+   lda #8
+ else
+   lda #(96/pfres) ; try to come close to the real size
+ endif
+ endif
+
+ sta playfieldpos
+ lda playfield+3
+ sta temp4
+ lda playfield+2
+ sta temp3
+ lda playfield+1
+ sta temp2
+ lda playfield
+ sta temp1
+ ldx #0
+up2
+ lda playfield+4,x
+ ifconst superchip
+ sta playfield-128,x
+ lda playfield+5,x
+ sta playfield-127,x
+ lda playfield+6,x
+ sta playfield-126,x
+ lda playfield+7,x
+ sta playfield-125,x
+ else
+ sta playfield,x
+ lda playfield+5,x
+ sta playfield+1,x
+ lda playfield+6,x
+ sta playfield+2,x
+ lda playfield+7,x
+ sta playfield+3,x
+ endif
+ txa
+ sbx #252
+ ifconst pfres
+ cpx #(pfres-1)*4
+ else
+ cpx #44
+ endif
+ bne up2
+
+ lda temp4
+ 
+ ifconst superchip
+ ifconst pfres
+ sta playfield+pfres*4-129
+ lda temp3
+ sta playfield+pfres*4-130
+ lda temp2
+ sta playfield+pfres*4-131
+ lda temp1
+ sta playfield+pfres*4-132
+ else
+ sta playfield+47-128
+ lda temp3
+ sta playfield+46-128
+ lda temp2
+ sta playfield+45-128
+ lda temp1
+ sta playfield+44-128
+ endif
+ else
+ ifconst pfres
+ sta playfield+pfres*4-1
+ lda temp3
+ sta playfield+pfres*4-2
+ lda temp2
+ sta playfield+pfres*4-3
+ lda temp1
+ sta playfield+pfres*4-4
+ else
+ sta playfield+47
+ lda temp3
+ sta playfield+46
+ lda temp2
+ sta playfield+45
+ lda temp1
+ sta playfield+44
+ endif
+ endif
+noshiftdown2
+ RETURN
+
+
+notup
+;down
+ lsr
+ bcs oneincup
+ inc playfieldpos
+oneincup
+ inc playfieldpos
+ lda playfieldpos
+
+  ifconst pfrowheight
+ cmp #pfrowheight+1
+ else
+ ifnconst pfres
+   cmp #9
+ else
+   cmp #(96/pfres)+1 ; try to come close to the real size
+ endif
+ endif
+
+ bcc noshiftdown 
+ lda #1
+ sta playfieldpos
+
+ ifconst pfres
+ lda playfield+pfres*4-1
+ sta temp4
+ lda playfield+pfres*4-2
+ sta temp3
+ lda playfield+pfres*4-3
+ sta temp2
+ lda playfield+pfres*4-4
+ else
+ lda playfield+47
+ sta temp4
+ lda playfield+46
+ sta temp3
+ lda playfield+45
+ sta temp2
+ lda playfield+44
+ endif
+
+ sta temp1
+
+ ifconst pfres
+ ldx #(pfres-1)*4
+ else
+ ldx #44
+ endif
+down2
+ lda playfield-1,x
+ ifconst superchip
+ sta playfield-125,x
+ lda playfield-2,x
+ sta playfield-126,x
+ lda playfield-3,x
+ sta playfield-127,x
+ lda playfield-4,x
+ sta playfield-128,x
+ else
+ sta playfield+3,x
+ lda playfield-2,x
+ sta playfield+2,x
+ lda playfield-3,x
+ sta playfield+1,x
+ lda playfield-4,x
+ sta playfield,x
+ endif
+ txa
+ sbx #4
+ bne down2
+
+ lda temp4
+ ifconst superchip
+ sta playfield-125
+ lda temp3
+ sta playfield-126
+ lda temp2
+ sta playfield-127
+ lda temp1
+ sta playfield-128
+ else
+ sta playfield+3
+ lda temp3
+ sta playfield+2
+ lda temp2
+ sta playfield+1
+ lda temp1
+ sta playfield
+ endif
+noshiftdown
+ RETURN
+; Provided under the CC0 license. See the included LICENSE.txt for details.
+
+;standard routines needed for pretty much all games
+; just the random number generator is left - maybe we should remove this asm file altogether?
+; repositioning code and score pointer setup moved to overscan
+; read switches, joysticks now compiler generated (more efficient)
+
+randomize
+	lda rand
+	lsr
+ ifconst rand16
+	rol rand16
+ endif
+	bcc noeor
+	eor #$B4
+noeor
+	sta rand
+ ifconst rand16
+	eor rand16
+ endif
+	RETURN
+; Provided under the CC0 license. See the included LICENSE.txt for details.
+
+drawscreen
+     ifconst debugscore
+         ldx #14
+         lda INTIM ; display # cycles left in the score
+
+         ifconst mincycles
+             lda mincycles 
+             cmp INTIM
+             lda mincycles
+             bcc nochange
+             lda INTIM
+             sta mincycles
+nochange
+         endif
+
+         ; cmp #$2B
+         ; bcs no_cycles_left
+         bmi cycles_left
+         ldx #64
+         eor #$ff ;make negative
+cycles_left
+         stx scorecolor
+         and #$7f ; clear sign bit
+         tax
+         lda scorebcd,x
+         sta score+2
+         lda scorebcd1,x
+         sta score+1
+         jmp done_debugscore 
+scorebcd
+         .byte $00, $64, $28, $92, $56, $20, $84, $48, $12, $76, $40
+         .byte $04, $68, $32, $96, $60, $24, $88, $52, $16, $80, $44
+         .byte $08, $72, $36, $00, $64, $28, $92, $56, $20, $84, $48
+         .byte $12, $76, $40, $04, $68, $32, $96, $60, $24, $88
+scorebcd1
+         .byte 0, 0, 1, 1, 2, 3, 3, 4, 5, 5, 6
+         .byte 7, 7, 8, 8, 9, $10, $10, $11, $12, $12, $13
+         .byte $14, $14, $15, $16, $16, $17, $17, $18, $19, $19, $20
+         .byte $21, $21, $22, $23, $23, $24, $24, $25, $26, $26
+done_debugscore
+     endif
+
+     ifconst debugcycles
+         lda INTIM ; if we go over, it mucks up the background color
+         ; cmp #$2B
+         ; BCC overscan
+         bmi overscan
+         sta COLUBK
+         bcs doneoverscan
+     endif
+
+overscan
+     ifconst interlaced
+         PHP
+         PLA 
+         EOR #4 ; flip interrupt bit
+         PHA
+         PLP
+         AND #4 ; isolate the interrupt bit
+         TAX ; save it for later
+     endif
+
+overscanloop
+     lda INTIM ;wait for sync
+     bmi overscanloop
+doneoverscan
+
+     ;do VSYNC
+
+     ifconst interlaced
+         CPX #4
+         BNE oddframevsync
+     endif
+
+     lda #2
+     sta WSYNC
+     sta VSYNC
+     STA WSYNC
+     STA WSYNC
+     lsr
+     STA WSYNC
+     STA VSYNC
+     sta VBLANK
+     ifnconst overscan_time
+         lda #37+128
+     else
+         lda #overscan_time+128
+     endif
+     sta TIM64T
+
+     ifconst interlaced
+         jmp postsync 
+
+oddframevsync
+         sta WSYNC
+
+         LDA ($80,X) ; 11 waste
+         LDA ($80,X) ; 11 waste
+         LDA ($80,X) ; 11 waste
+
+         lda #2
+         sta VSYNC
+         sta WSYNC
+         sta WSYNC
+         sta WSYNC
+
+         LDA ($80,X) ; 11 waste
+         LDA ($80,X) ; 11 waste
+         LDA ($80,X) ; 11 waste
+
+         lda #0
+         sta VSYNC
+         sta VBLANK
+         ifnconst overscan_time
+             lda #37+128
+         else
+             lda #overscan_time+128
+         endif
+         sta TIM64T
+
+postsync
+     endif
+
+     ifconst legacy
+         if legacy < 100
+             ldx #4
+adjustloop
+             lda player0x,x
+             sec
+             sbc #14 ;?
+             sta player0x,x
+             dex
+             bpl adjustloop
+         endif
+     endif
+     if ((<*)>$e9)&&((<*)<$fa)
+         repeat ($fa-(<*))
+         nop
+         repend
+     endif
+     sta WSYNC
+     ldx #4
+     SLEEP 3
+HorPosLoop     ; 5
+     lda player0x,X ;+4 9
+     sec ;+2 11
+DivideLoop
+     sbc #15
+     bcs DivideLoop;+4 15
+     sta temp1,X ;+4 19
+     sta RESP0,X ;+4 23
+     sta WSYNC
+     dex
+     bpl HorPosLoop;+5 5
+     ; 4
+
+     ldx #4
+     ldy temp1,X
+     lda repostable-256,Y
+     sta HMP0,X ;+14 18
+
+     dex
+     ldy temp1,X
+     lda repostable-256,Y
+     sta HMP0,X ;+14 32
+
+     dex
+     ldy temp1,X
+     lda repostable-256,Y
+     sta HMP0,X ;+14 46
+
+     dex
+     ldy temp1,X
+     lda repostable-256,Y
+     sta HMP0,X ;+14 60
+
+     dex
+     ldy temp1,X
+     lda repostable-256,Y
+     sta HMP0,X ;+14 74
+
+     sta WSYNC
+     
+     sta HMOVE ;+3 3
+
+
+     ifconst legacy
+         if legacy < 100
+             ldx #4
+adjustloop2
+             lda player0x,x
+             clc
+             adc #14 ;?
+             sta player0x,x
+             dex
+             bpl adjustloop2
+         endif
+     endif
+
+
+
+
+     ;set score pointers
+     lax score+2
+     jsr scorepointerset
+     sty scorepointers+5
+     stx scorepointers+2
+     lax score+1
+     jsr scorepointerset
+     sty scorepointers+4
+     stx scorepointers+1
+     lax score
+     jsr scorepointerset
+     sty scorepointers+3
+     stx scorepointers
+
+vblk
+     ; run possible vblank bB code
+     ifconst vblank_bB_code
+         jsr vblank_bB_code
+     endif
+vblk2
+     LDA INTIM
+     bmi vblk2
+     jmp kernel
+     
+
+     .byte $80,$70,$60,$50,$40,$30,$20,$10,$00
+     .byte $F0,$E0,$D0,$C0,$B0,$A0,$90
+repostable
+
+scorepointerset
+     and #$0F
+     asl
+     asl
+     asl
+     adc #<scoretable
+     tay 
+     txa
+     ; and #$F0
+     ; lsr
+     asr #$F0
+     adc #<scoretable
+     tax
+     rts
+; Provided under the CC0 license. See the included LICENSE.txt for details.
+
+; Compute mul1*mul2+acc -> acc:mul1 [mul2 is unchanged]
+; Routine courtesy of John Payson (AtariAge member supercat)
+ 
+ ; x and a contain multiplicands, result in a, temp1 contains any overflow
+
+mul16
+ sty temp1
+ sta temp2
+ ldx #8
+ dec temp2
+loopmul
+ lsr
+ ror temp1
+ bcc noaddmul
+ adc temp2
+noaddmul
+ dex
+ bne loopmul
+ RETURN
+
+; div int/int
+; numerator in A, denom in temp1
+; returns with quotient in A, remainder in temp1
+
+div16
+ sta temp2 
+ sty temp1 
+ lda #0
+ ldx #8
+ asl temp2
+div16_1
+ rol
+ cmp temp1
+ bcc div16_2
+ sbc temp1
+div16_2
+ rol temp2
+ dex
+ bne div16_1
+ sta temp1
+ lda temp2
+ RETURN
+
+game
+.L00 ;  set tv ntsc
+
+.L01 ;  include div_mul16.asm
+
+.L02 ;  const pfscore  =  1
+
+.L03 ;  pfscorecolor  =  $B8
+
+	LDA #$B8
+	STA pfscorecolor
+.L04 ;  pfscore1  =  %10101010
+
+	LDA #%10101010
+	STA pfscore1
+.L05 ;  dim doorctl  =  a
+
+.L06 ;  dim tick  =  b
+
+.L07 ;  dim seconds  =  c
+
+.L08 ;  dim time  =  d
+
+.L09 ;  dim night  =  e
+
+.L010 ;  dim powertotal  =  f
+
+.L011 ;  dim powerloss  =  g
+
+.L012 ;  dim rand16  =  h
+
+.L013 ;  dim move_rate  =  i
+
+.L014 ;  dim Bon_Tick  =  j
+
+.L015 ;  dim Chic_Tick  =  k
+
+.L016 ;  dim Fox_Tick  =  l
+
+.L017 ;  dim power_tick  =  m
+
+.L018 ;  dim ai_second  =  n
+
+.L019 ;  dim input_latch  =  o
+
+.L020 ;  doorctl  =  %00000000
+
+	LDA #%00000000
+	STA doorctl
+.L021 ;  powertotal = 255
+
+	LDA #255
+	STA powertotal
+.L022 ;  powerloss =  1
+
+	LDA #1
+	STA powerloss
+.L023 ;  COLUPF = $0E
+
+	LDA #$0E
+	STA COLUPF
+.L024 ;  scorecolor  =  $0E
+
+	LDA #$0E
+	STA scorecolor
+.
+ ; 
+
+.L025 ;  player0:
+
+	LDX #<playerL025_0
+	STX player0pointerlo
+	LDA #>playerL025_0
+	STA player0pointerhi
+	LDA #15
+	STA player0height
+.
+ ; 
+
+.L026 ;  player1:
+
+	LDX #<playerL026_1
+	STX player1pointerlo
+	LDA #>playerL026_1
+	STA player1pointerhi
+	LDA #15
+	STA player1height
+.
+ ; 
+
+.
+ ; 
+
+.L027 ;  goto __Start
+
+ jmp .__Start
+
+.
+ ; 
+
+.__Map
+ ; __Map
+
+.
+ ; 
+
+.L028 ;  playfield:
+
+  ifconst pfres
+	  ldx #(11>pfres)*(pfres*pfwidth-1)+(11<=pfres)*43
+  else
+	  ldx #((11*pfwidth-1)*((11*pfwidth-1)<47))+(47*((11*pfwidth-1)>=47))
+  endif
+	jmp pflabel0
+PF_data0
+	.byte %11110000, %11111100
+	if (pfwidth>2)
+	.byte %11111000, %11011100
+ endif
+	.byte %11111111, %11111111
+	if (pfwidth>2)
+	.byte %11111111, %11111111
+ endif
+	.byte %11110011, %11111111
+	if (pfwidth>2)
+	.byte %11111111, %00011101
+ endif
+	.byte %00000011, %11111111
+	if (pfwidth>2)
+	.byte %11111111, %00011101
+ endif
+	.byte %00111111, %11111111
+	if (pfwidth>2)
+	.byte %11111111, %11011101
+ endif
+	.byte %00111111, %11111111
+	if (pfwidth>2)
+	.byte %11111111, %11111101
+ endif
+	.byte %00000000, %00000100
+	if (pfwidth>2)
+	.byte %00100000, %00000001
+ endif
+	.byte %00001110, %00001110
+	if (pfwidth>2)
+	.byte %01110000, %11111111
+ endif
+	.byte %00001111, %11101111
+	if (pfwidth>2)
+	.byte %01110000, %11111111
+ endif
+	.byte %00001110, %11111110
+	if (pfwidth>2)
+	.byte %11110000, %11111111
+ endif
+	.byte %00000000, %11101110
+	if (pfwidth>2)
+	.byte %01110000, %00000000
+ endif
+pflabel0
+	lda PF_data0,x
+	sta playfield,x
+	dex
+	bpl pflabel0
+.L029 ;  return
+
+	RTS
+.
+ ; 
+
+.__Start
+ ; __Start
+
+.L030 ;  gosub __Map
+
+ jsr .__Map
+
+.
+ ; 
+
+.
+ ; 
+
+.L031 ;  night  =  1
+
+	LDA #1
+	STA night
+.L032 ;  score  =  0
+
+	LDA #$00
+	STA score+2
+	LDA #$00
+	STA score+1
+	LDA #$00
+	STA score
+.L033 ;  move_rate  =  8
+
+	LDA #8
+	STA move_rate
+.L034 ;  Bon_Tick  =  0
+
+	LDA #0
+	STA Bon_Tick
+.L035 ;  Chic_Tick  =  0
+
+	LDA #0
+	STA Chic_Tick
+.L036 ;  Fox_Tick  =  0
+
+	LDA #0
+	STA Fox_Tick
+.L037 ;  doorctl  =  %00000000
+
+	LDA #%00000000
+	STA doorctl
+.L038 ;  tick  =  0
+
+	LDA #0
+	STA tick
+.L039 ;  seconds  =  0
+
+	LDA #0
+	STA seconds
+.L040 ;  time  =  0
+
+	LDA #0
+	STA time
+.L041 ;  powertotal  =  255
+
+	LDA #255
+	STA powertotal
+.L042 ;  powerloss  =  1
+
+	LDA #1
+	STA powerloss
+.L043 ;  power_tick  =  0
+
+	LDA #0
+	STA power_tick
+.L044 ;  ai_second  =  0
+
+	LDA #0
+	STA ai_second
+.L045 ;  input_latch  =  0
+
+	LDA #0
+	STA input_latch
+.L046 ;  pfscore1  =  %10101010
+
+	LDA #%10101010
+	STA pfscore1
+.
+ ; 
+
+.L047 ;  player0x  =  68
+
+	LDA #68
+	STA player0x
+.L048 ;  player0y  =  4
+
+	LDA #4
+	STA player0y
+.L049 ;  player1x  =  82
+
+	LDA #82
+	STA player1x
+.L050 ;  player1y  =  4
+
+	LDA #4
+	STA player1y
+.
+ ; 
+
+.L051 ;  ballx  =  26
+
+	LDA #26
+	STA ballx
+.L052 ;  bally  =  18
+
+	LDA #18
+	STA bally
+.L053 ;  ballheight  =  2
+
+	LDA #2
+	STA ballheight
+.mainloop
+ ; mainloop
+
+.L054 ;  AUDV0  =  0
+
+	LDA #0
+	STA AUDV0
+.L055 ;  AUDC0  =  0
+
+	LDA #0
+	STA AUDC0
+.L056 ;  AUDF0  =  0
+
+	LDA #0
+	STA AUDF0
+.L057 ;  COLUPF = $0E
+
+	LDA #$0E
+	STA COLUPF
+.L058 ;  COLUP0  =  $74
+
+	LDA #$74
+	STA COLUP0
+.L059 ;  COLUP1  =  $1C
+
+	LDA #$1C
+	STA COLUP1
+.L060 ;  missile1x  =  84
+
+	LDA #84
+	STA missile1x
+.L061 ;  if doorctl{2} then missile1y  =  81 else missile1y  =  72
+
+	LDA doorctl
+	AND #4
+	BEQ .skipL061
+.condpart0
+	LDA #81
+	STA missile1y
+ jmp .skipelse0
+.skipL061
+	LDA #72
+	STA missile1y
+.skipelse0
+.L062 ;  missile1height  =  9
+
+	LDA #9
+	STA missile1height
+.L063 ;  missile0x  =  68
+
+	LDA #68
+	STA missile0x
+.L064 ;  if doorctl{1} then missile0y  =  81 else missile0y  =  72
+
+	LDA doorctl
+	AND #2
+	BEQ .skipL064
+.condpart1
+	LDA #81
+	STA missile0y
+ jmp .skipelse1
+.skipL064
+	LDA #72
+	STA missile0y
+.skipelse1
+.L065 ;  missile0height  =  9
+
+	LDA #9
+	STA missile0height
+.L066 ;  drawscreen
+
+ jsr drawscreen
+.
+ ; 
+
+.
+ ; 
+
+.L067 ;  if joy0left  &&  !input_latch{0} then doorctl{1}  =  !doorctl{1} : input_latch{0} = 1
+
+ bit SWCHA
+	BVS .skipL067
+.condpart2
+	LDA input_latch
+	LSR
+	BCS .skip2then
+.condpart3
+	LDA doorctl
+	AND #2
+  PHP
+	LDA doorctl
+	AND #253
+  PLP
+	.byte $D0, $02
+	ORA #2
+	STA doorctl
+	LDA input_latch
+	ORA #1
+	STA input_latch
+.skip2then
+.skipL067
+.L068 ;  if !joy0left then input_latch{0} = 0
+
+ bit SWCHA
+	BVC .skipL068
+.condpart4
+	LDA input_latch
+	AND #254
+	STA input_latch
+.skipL068
+.L069 ;  if joy0right  &&  !input_latch{1} then doorctl{2}  =  !doorctl{2} : input_latch{1} = 1
+
+ bit SWCHA
+	BMI .skipL069
+.condpart5
+	LDA input_latch
+	AND #2
+	BNE .skip5then
+.condpart6
+	LDA doorctl
+	AND #4
+  PHP
+	LDA doorctl
+	AND #251
+  PLP
+	.byte $D0, $02
+	ORA #4
+	STA doorctl
+	LDA input_latch
+	ORA #2
+	STA input_latch
+.skip5then
+.skipL069
+.L070 ;  if !joy0right then input_latch{1} = 0
+
+ bit SWCHA
+	BPL .skipL070
+.condpart7
+	LDA input_latch
+	AND #253
+	STA input_latch
+.skipL070
+.L071 ;  if time  =  6 then goto __6am
+
+	LDA time
+	CMP #6
+     BNE .skipL071
+.condpart8
+ jmp .__6am
+
+.skipL071
+.
+ ; 
+
+.
+ ; 
+
+.
+ ; 
+
+.L072 ;  if powertotal  >  75 then pfscore1  =  %10101010
+
+	LDA #75
+	CMP powertotal
+     BCS .skipL072
+.condpart9
+	LDA #%10101010
+	STA pfscore1
+.skipL072
+.L073 ;  if powertotal  <=  75 then pfscore1  =  %00101010
+
+	LDA #75
+	CMP powertotal
+     BCC .skipL073
+.condpart10
+	LDA #%00101010
+	STA pfscore1
+.skipL073
+.L074 ;  if powertotal  <=  50 then pfscore1  =  %00001010
+
+	LDA #50
+	CMP powertotal
+     BCC .skipL074
+.condpart11
+	LDA #%00001010
+	STA pfscore1
+.skipL074
+.L075 ;  if powertotal  <=  25 then pfscore1  =  %00000010
+
+	LDA #25
+	CMP powertotal
+     BCC .skipL075
+.condpart12
+	LDA #%00000010
+	STA pfscore1
+.skipL075
+.L076 ;  if powertotal  =  0 then pfscore1  =  0 : COLUPF = $00 : tick = 0 : seconds = 0 : goto __blackout
+
+	LDA powertotal
+	CMP #0
+     BNE .skipL076
+.condpart13
+	LDA #0
+	STA pfscore1
+	LDA #$00
+	STA COLUPF
+	LDA #0
+	STA tick
+	STA seconds
+ jmp .__blackout
+
+.skipL076
+.
+ ; 
+
+.
+ ; 
+
+.L077 ;  tick  =  tick + 1
+
+	INC tick
+.L078 ;  if tick  =  60 then seconds = seconds + 1 : tick = 0
+
+	LDA tick
+	CMP #60
+     BNE .skipL078
+.condpart14
+	INC seconds
+	LDA #0
+	STA tick
+.skipL078
+.L079 ;  if seconds  =  90 then time = time + 1 : score = score + 1 : seconds = 0 : power_tick = 0 : ai_second = 0
+
+	LDA seconds
+	CMP #90
+     BNE .skipL079
+.condpart15
+	INC time
+	SED
+	CLC
+	LDA score+2
+	ADC #$01
+	STA score+2
+	LDA score+1
+	ADC #$00
+	STA score+1
+	LDA score
+	ADC #$00
+	STA score
+	CLD
+	LDA #0
+	STA seconds
+	STA power_tick
+	STA ai_second
+.skipL079
+.
+ ; 
+
+.
+ ; 
+
+.
+ ; 
+
+.L080 ;  z  =  seconds  //  10
+
+	LDA seconds
+	LDY #10
+ jsr div16
+	STA z
+.L081 ;  if temp1  =  0  &&  seconds  <>  power_tick then power_tick = seconds : goto __power
+
+	LDA temp1
+	CMP #0
+     BNE .skipL081
+.condpart16
+	LDA seconds
+	CMP power_tick
+     BEQ .skip16then
+.condpart17
+	LDA seconds
+	STA power_tick
+ jmp .__power
+
+.skip16then
+.skipL081
+.
+ ; 
+
+.
+ ; 
+
+.
+ ; 
+
+.
+ ; 
+
+.L082 ;  move_rate  =  8
+
+	LDA #8
+	STA move_rate
+.L083 ;  move_rate  =  move_rate  //  night
+
+	LDA move_rate
+	LDY night
+ jsr div16
+	STA move_rate
+.L084 ;  if move_rate  =  0 then move_rate  =  1
+
+	LDA move_rate
+	CMP #0
+     BNE .skipL084
+.condpart18
+	LDA #1
+	STA move_rate
+.skipL084
+.L085 ;  z  =  seconds  //  move_rate
+
+	LDA seconds
+	LDY move_rate
+ jsr div16
+	STA z
+.L086 ;  if temp1  =  0  &&  seconds  <>  ai_second then ai_second = seconds : z = rand // 32 : rand16 = temp1 : goto __AIroll
+
+	LDA temp1
+	CMP #0
+     BNE .skipL086
+.condpart19
+	LDA seconds
+	CMP ai_second
+     BEQ .skip19then
+.condpart20
+	LDA seconds
+	STA ai_second
+ jsr randomize
+	ldx #0
+	stx temp1
+	lsr
+  rol temp1
+	lsr
+  rol temp1
+	lsr
+  rol temp1
+	lsr
+  rol temp1
+	lsr
+  rol temp1
+	STA z
+	LDA temp1
+	STA rand16
+ jmp .__AIroll
+
+.skip19then
+.skipL086
+.L087 ;  goto __AIstate
+
+ jmp .__AIstate
+
+.
+ ; 
+
+.__AIroll
+ ; __AIroll
+
+.
+ ; 
+
+.
+ ; 
+
+.L088 ;  if rand16  >=  20  &&  rand16  <=  21 then goto __Foxy
+
+	LDA rand16
+	CMP #20
+     BCC .skipL088
+.condpart21
+	LDA #21
+	CMP rand16
+     BCC .skip21then
+.condpart22
+ jmp .__Foxy
+
+.skip21then
+.skipL088
+.L089 ;  if rand16  >=  9  &&  rand16  <=  10 then goto __Chica
+
+	LDA rand16
+	CMP #9
+     BCC .skipL089
+.condpart23
+	LDA #10
+	CMP rand16
+     BCC .skip23then
+.condpart24
+ jmp .__Chica
+
+.skip23then
+.skipL089
+.L090 ;  if rand16  <=  1 then goto __Bonnie
+
+	LDA #1
+	CMP rand16
+     BCC .skipL090
+.condpart25
+ jmp .__Bonnie
+
+.skipL090
+.L091 ;  goto __AIstate
+
+ jmp .__AIstate
+
+.
+ ; 
+
+.__AIstate
+ ; __AIstate
+
+.L092 ;  if joy1fire then goto __blackout
+
+ bit INPT5
+	BMI .skipL092
+.condpart26
+ jmp .__blackout
+
+.skipL092
+.
+ ; 
+
+.
+ ; 
+
+.
+ ; 
+
+.L093 ;  if Bon_Tick  =  1 then goto Bon1
+
+	LDA Bon_Tick
+	CMP #1
+     BNE .skipL093
+.condpart27
+ jmp .Bon1
+
+.skipL093
+.L094 ;  if Bon_Tick  =  2 then goto Bon2
+
+	LDA Bon_Tick
+	CMP #2
+     BNE .skipL094
+.condpart28
+ jmp .Bon2
+
+.skipL094
+.L095 ;  if Bon_Tick  =  3 then goto Bon3
+
+	LDA Bon_Tick
+	CMP #3
+     BNE .skipL095
+.condpart29
+ jmp .Bon3
+
+.skipL095
+.L096 ;  if Bon_Tick  =  4 then goto Bon4
+
+	LDA Bon_Tick
+	CMP #4
+     BNE .skipL096
+.condpart30
+ jmp .Bon4
+
+.skipL096
+.L097 ;  if Bon_Tick  >=  5 then goto BonJump
+
+	LDA Bon_Tick
+	CMP #5
+     BCC .skipL097
+.condpart31
+ jmp .BonJump
+
+.skipL097
+.L098 ;  if Chic_Tick  =  1 then goto Chic1
+
+	LDA Chic_Tick
+	CMP #1
+     BNE .skipL098
+.condpart32
+ jmp .Chic1
+
+.skipL098
+.L099 ;  if Chic_Tick  =  2 then goto Chic2
+
+	LDA Chic_Tick
+	CMP #2
+     BNE .skipL099
+.condpart33
+ jmp .Chic2
+
+.skipL099
+.L0100 ;  if Chic_Tick  =  3 then goto Chic3
+
+	LDA Chic_Tick
+	CMP #3
+     BNE .skipL0100
+.condpart34
+ jmp .Chic3
+
+.skipL0100
+.L0101 ;  if Chic_Tick  =  4 then goto Chic4
+
+	LDA Chic_Tick
+	CMP #4
+     BNE .skipL0101
+.condpart35
+ jmp .Chic4
+
+.skipL0101
+.L0102 ;  if Chic_Tick  >=  5 then goto ChicJump
+
+	LDA Chic_Tick
+	CMP #5
+     BCC .skipL0102
+.condpart36
+ jmp .ChicJump
+
+.skipL0102
+.L0103 ;  if Fox_Tick  =  1 then goto Fox1
+
+	LDA Fox_Tick
+	CMP #1
+     BNE .skipL0103
+.condpart37
+ jmp .Fox1
+
+.skipL0103
+.L0104 ;  if Fox_Tick  =  2 then goto Fox2
+
+	LDA Fox_Tick
+	CMP #2
+     BNE .skipL0104
+.condpart38
+ jmp .Fox2
+
+.skipL0104
+.L0105 ;  if Fox_Tick  =  3 then goto Fox3
+
+	LDA Fox_Tick
+	CMP #3
+     BNE .skipL0105
+.condpart39
+ jmp .Fox3
+
+.skipL0105
+.L0106 ;  if Fox_Tick  =  4 then goto Fox4
+
+	LDA Fox_Tick
+	CMP #4
+     BNE .skipL0106
+.condpart40
+ jmp .Fox4
+
+.skipL0106
+.L0107 ;  if Fox_Tick  >=  5 then goto FoxJump
+
+	LDA Fox_Tick
+	CMP #5
+     BCC .skipL0107
+.condpart41
+ jmp .FoxJump
+
+.skipL0107
+.L0108 ;  goto mainloop
+
+ jmp .mainloop
+
+.
+ ; 
+
+.
+ ; 
+
+.
+ ; 
+
+.__6am
+ ; __6am
+
+.
+ ; 
+
+.L0109 ;  playfield:
+
+  ifconst pfres
+	  ldx #(7>pfres)*(pfres*pfwidth-1)+(7<=pfres)*27
+  else
+	  ldx #((7*pfwidth-1)*((7*pfwidth-1)<47))+(47*((7*pfwidth-1)>=47))
+  endif
+	jmp pflabel1
+PF_data1
+	.byte %11111111, %11100000
+	if (pfwidth>2)
+	.byte %11100010, %01000000
+ endif
+	.byte %10000000, %00010000
+	if (pfwidth>2)
+	.byte %00010010, %01000000
+ endif
+	.byte %10000000, %00010000
+	if (pfwidth>2)
+	.byte %00010010, %01010001
+ endif
+	.byte %11111111, %11110001
+	if (pfwidth>2)
+	.byte %11110010, %01001110
+ endif
+	.byte %10000001, %00010000
+	if (pfwidth>2)
+	.byte %00010010, %01000000
+ endif
+	.byte %10000001, %00010000
+	if (pfwidth>2)
+	.byte %00010010, %01000000
+ endif
+	.byte %11111111, %00010000
+	if (pfwidth>2)
+	.byte %00010010, %01000000
+ endif
+pflabel1
+	lda PF_data1,x
+	sta playfield,x
+	dex
+	bpl pflabel1
+.L0110 ;  drawscreen
+
+ jsr drawscreen
+.
+ ; 
+
+.
+ ; 
+
+.
+ ; 
+
+.L0111 ;  if joy0fire then goto __NextNight
+
+ bit INPT4
+	BMI .skipL0111
+.condpart42
+ jmp .__NextNight
+
+.skipL0111
+.L0112 ;  goto __6am
+
+ jmp .__6am
+
+.
+ ; 
+
+.__NextNight
+ ; __NextNight
+
+.L0113 ;  score = score - 6
+
+	SED
+	SEC
+	LDA score+2
+	SBC #$06
+	STA score+2
+	LDA score+1
+	SBC #$00
+	STA score+1
+	LDA score
+	SBC #$00
+	STA score
+	CLD
+.L0114 ;  score = score + 100000
+
+	SED
+	CLC
+	LDA score
+	ADC #$10
+	STA score
+	CLD
+.L0115 ;  night = night + 1
+
+	INC night
+.L0116 ;  gosub __Map
+
+ jsr .__Map
+
+.L0117 ;  Bon_Tick = 0
+
+	LDA #0
+	STA Bon_Tick
+.L0118 ;  Chic_Tick = 0
+
+	LDA #0
+	STA Chic_Tick
+.L0119 ;  Fox_Tick = 0
+
+	LDA #0
+	STA Fox_Tick
+.L0120 ;  player0x = 68
+
+	LDA #68
+	STA player0x
+.L0121 ;  player0y = 4
+
+	LDA #4
+	STA player0y
+.L0122 ;  player1x = 82
+
+	LDA #82
+	STA player1x
+.L0123 ;  player1y = 4
+
+	LDA #4
+	STA player1y
+.L0124 ;  ballx = 26
+
+	LDA #26
+	STA ballx
+.L0125 ;  bally = 18
+
+	LDA #18
+	STA bally
+.L0126 ;  doorctl = %00000000
+
+	LDA #%00000000
+	STA doorctl
+.L0127 ;  input_latch = 0
+
+	LDA #0
+	STA input_latch
+.L0128 ;  powertotal = 255
+
+	LDA #255
+	STA powertotal
+.L0129 ;  powerloss = 1
+
+	LDA #1
+	STA powerloss
+.L0130 ;  time = 0
+
+	LDA #0
+	STA time
+.L0131 ;  seconds = 0
+
+	LDA #0
+	STA seconds
+.L0132 ;  tick = 0
+
+	LDA #0
+	STA tick
+.L0133 ;  power_tick = 0
+
+	LDA #0
+	STA power_tick
+.L0134 ;  ai_second = 0
+
+	LDA #0
+	STA ai_second
+.L0135 ;  pfscore1 = %10101010
+
+	LDA #%10101010
+	STA pfscore1
+.L0136 ;  goto mainloop
+
+ jmp .mainloop
+
+.__power
+ ; __power
+
+.
+ ; 
+
+.
+ ; 
+
+.
+ ; 
+
+.L0137 ;  powerloss  =  1
+
+	LDA #1
+	STA powerloss
+.L0138 ;  if doorctl{1} then powerloss  =  powerloss  +  1
+
+	LDA doorctl
+	AND #2
+	BEQ .skipL0138
+.condpart43
+	INC powerloss
+.skipL0138
+.L0139 ;  if doorctl{2} then powerloss  =  powerloss  +  1
+
+	LDA doorctl
+	AND #4
+	BEQ .skipL0139
+.condpart44
+	INC powerloss
+.skipL0139
+.L0140 ;  if powertotal  <=  powerloss then powertotal = 0 else powertotal = powertotal - powerloss
+
+	LDA powerloss
+	CMP powertotal
+     BCC .skipL0140
+.condpart45
+	LDA #0
+	STA powertotal
+ jmp .skipelse2
+.skipL0140
+	LDA powertotal
+	SEC
+	SBC powerloss
+	STA powertotal
+.skipelse2
+.L0141 ;  goto mainloop
+
+ jmp .mainloop
+
+.
+ ; 
+
+.__blackout
+ ; __blackout
+
+.
+ ; 
+
+.
+ ; 
+
+.L0142 ;  playfield:
+
+  ifconst pfres
+	  ldx #(12>pfres)*(pfres*pfwidth-1)+(12<=pfres)*47
+  else
+	  ldx #((12*pfwidth-1)*((12*pfwidth-1)<47))+(47*((12*pfwidth-1)>=47))
+  endif
+	jmp pflabel2
+PF_data2
+	.byte %11111100, %00000000
+	if (pfwidth>2)
+	.byte %00000000, %11111000
+ endif
+	.byte %11111100, %00000000
+	if (pfwidth>2)
+	.byte %00000000, %11111000
+ endif
+	.byte %11111100, %00000000
+	if (pfwidth>2)
+	.byte %00000000, %11111000
+ endif
+	.byte %00000111, %00000001
+	if (pfwidth>2)
+	.byte %00000001, %00000111
+ endif
+	.byte %00000111, %00000001
+	if (pfwidth>2)
+	.byte %00000001, %00000111
+ endif
+	.byte %00000000, %11000000
+	if (pfwidth>2)
+	.byte %11000000, %00000000
+ endif
+	.byte %00000000, %11111110
+	if (pfwidth>2)
+	.byte %11111110, %00000000
+ endif
+	.byte %00000000, %11111110
+	if (pfwidth>2)
+	.byte %11111110, %00000000
+ endif
+	.byte %00000000, %01000010
+	if (pfwidth>2)
+	.byte %01000010, %00000000
+ endif
+	.byte %00000000, %11000000
+	if (pfwidth>2)
+	.byte %11000000, %00000000
+ endif
+	.byte %00000000, %00000111
+	if (pfwidth>2)
+	.byte %00000111, %00000000
+ endif
+	.byte %00000000, %11111111
+	if (pfwidth>2)
+	.byte %11111111, %00000000
+ endif
+pflabel2
+	lda PF_data2,x
+	sta playfield,x
+	dex
+	bpl pflabel2
+.L0143 ;  tick  =  tick  +  1
+
+	INC tick
+.L0144 ;  if tick  =  60 then tick = 0 : seconds = seconds + 1
+
+	LDA tick
+	CMP #60
+     BNE .skipL0144
+.condpart46
+	LDA #0
+	STA tick
+	INC seconds
+.skipL0144
+.L0145 ;  if seconds  =  60 then COLUPF  =  $E4 : gosub __Sound : seconds = 61
+
+	LDA seconds
+	CMP #60
+     BNE .skipL0145
+.condpart47
+	LDA #$E4
+	STA COLUPF
+ jsr .__Sound
+	LDA #61
+	STA seconds
+.skipL0145
+.L0146 ;  drawscreen
+
+ jsr drawscreen
+.L0147 ;  if joy0fire then goto __Start else goto __blackout
+
+ bit INPT4
+	BMI .skipL0147
+.condpart48
+ jmp .__Start
+ jmp .skipelse3
+.skipL0147
+ jmp .__blackout
+
+.skipelse3
+.
+ ; 
+
+.
+ ; 
+
+.__Bonnie
+ ; __Bonnie
+
+.L0148 ;  Bon_Tick  =  Bon_Tick  + 1
+
+	INC Bon_Tick
+.L0149 ;  goto mainloop
+
+ jmp .mainloop
+
+.
+ ; 
+
+.Bon1
+ ; Bon1
+
+.
+ ; 
+
+.L0150 ;  player0x  =  54
+
+	LDA #54
+	STA player0x
+.L0151 ;  player0y  =  20
+
+	LDA #20
+	STA player0y
+.L0152 ;  goto mainloop
+
+ jmp .mainloop
+
+.Bon2
+ ; Bon2
+
+.
+ ; 
+
+.L0153 ;  player0x  =  34
+
+	LDA #34
+	STA player0x
+.L0154 ;  player0y  =  38
+
+	LDA #38
+	STA player0y
+.L0155 ;  goto mainloop
+
+ jmp .mainloop
+
+.Bon3
+ ; Bon3
+
+.
+ ; 
+
+.L0156 ;  player0x  =  44
+
+	LDA #44
+	STA player0x
+.L0157 ;  player0y  =  56
+
+	LDA #56
+	STA player0y
+.L0158 ;  goto mainloop
+
+ jmp .mainloop
+
+.Bon4
+ ; Bon4
+
+.
+ ; 
+
+.L0159 ;  player0x  =  58
+
+	LDA #58
+	STA player0x
+.L0160 ;  player0y  =  72
+
+	LDA #72
+	STA player0y
+.L0161 ;  goto mainloop
+
+ jmp .mainloop
+
+.BonJump
+ ; BonJump
+
+.
+ ; 
+
+.L0162 ;  if doorctl{1} then Bon_Tick = 0 : player0x = 68 : player0y = 4 : goto mainloop
+
+	LDA doorctl
+	AND #2
+	BEQ .skipL0162
+.condpart49
+	LDA #0
+	STA Bon_Tick
+	LDA #68
+	STA player0x
+	LDA #4
+	STA player0y
+ jmp .mainloop
+
+.skipL0162
+.L0163 ;  playfield:
+
+  ifconst pfres
+	  ldx #(12>pfres)*(pfres*pfwidth-1)+(12<=pfres)*47
+  else
+	  ldx #((12*pfwidth-1)*((12*pfwidth-1)<47))+(47*((12*pfwidth-1)>=47))
+  endif
+	jmp pflabel3
+PF_data3
+	.byte %00011110, %00000000
+	if (pfwidth>2)
+	.byte %00000000, %00001111
+ endif
+	.byte %00011110, %00000000
+	if (pfwidth>2)
+	.byte %00000000, %00001111
+ endif
+	.byte %00011110, %00000000
+	if (pfwidth>2)
+	.byte %00000000, %00001111
+ endif
+	.byte %00001100, %00000000
+	if (pfwidth>2)
+	.byte %00000000, %00000110
+ endif
+	.byte %00001111, %11111111
+	if (pfwidth>2)
+	.byte %11111111, %00000111
+ endif
+	.byte %00001001, %00000111
+	if (pfwidth>2)
+	.byte %00001111, %00000100
+ endif
+	.byte %00001001, %00000111
+	if (pfwidth>2)
+	.byte %00001111, %00000100
+ endif
+	.byte %00001000, %00000000
+	if (pfwidth>2)
+	.byte %00000000, %00000100
+ endif
+	.byte %00001000, %11100000
+	if (pfwidth>2)
+	.byte %11000000, %00000100
+ endif
+	.byte %00001000, %11111100
+	if (pfwidth>2)
+	.byte %11111000, %00000100
+ endif
+	.byte %00001000, %11111100
+	if (pfwidth>2)
+	.byte %11111000, %00000100
+ endif
+	.byte %00001000, %00000000
+	if (pfwidth>2)
+	.byte %00000000, %00000100
+ endif
+pflabel3
+	lda PF_data3,x
+	sta playfield,x
+	dex
+	bpl pflabel3
+.L0164 ;  COLUPF = $62 : gosub __Sound : drawscreen
+
+	LDA #$62
+	STA COLUPF
+ jsr .__Sound
+ jsr drawscreen
+.L0165 ;  if joy0fire then goto __Start else goto BonJump
+
+ bit INPT4
+	BMI .skipL0165
+.condpart50
+ jmp .__Start
+ jmp .skipelse4
+.skipL0165
+ jmp .BonJump
+
+.skipelse4
+.
+ ; 
+
+.
+ ; 
+
+.__Chica
+ ; __Chica
+
+.L0166 ;  Chic_Tick  =  Chic_Tick  +  1
+
+	INC Chic_Tick
+.L0167 ;  goto mainloop
+
+ jmp .mainloop
+
+.Chic1
+ ; Chic1
+
+.
+ ; 
+
+.L0168 ;  player1x  =  98
+
+	LDA #98
+	STA player1x
+.L0169 ;  player1y  =  20
+
+	LDA #20
+	STA player1y
+.L0170 ;  goto mainloop
+
+ jmp .mainloop
+
+.Chic2
+ ; Chic2
+
+.
+ ; 
+
+.L0171 ;  player1x  =  118
+
+	LDA #118
+	STA player1x
+.L0172 ;  player1y  =  38
+
+	LDA #38
+	STA player1y
+.L0173 ;  goto mainloop
+
+ jmp .mainloop
+
+.Chic3
+ ; Chic3
+
+.
+ ; 
+
+.L0174 ;  player1x  =  108
+
+	LDA #108
+	STA player1x
+.L0175 ;  player1y  =  56
+
+	LDA #56
+	STA player1y
+.L0176 ;  goto mainloop
+
+ jmp .mainloop
+
+.Chic4
+ ; Chic4
+
+.
+ ; 
+
+.L0177 ;  player1x  =  90
+
+	LDA #90
+	STA player1x
+.L0178 ;  player1y  =  72
+
+	LDA #72
+	STA player1y
+.L0179 ;  goto mainloop
+
+ jmp .mainloop
+
+.ChicJump
+ ; ChicJump
+
+.
+ ; 
+
+.L0180 ;  if doorctl{2} then Chic_Tick = 0 : player1x = 82 : player1y = 4 : goto mainloop
+
+	LDA doorctl
+	AND #4
+	BEQ .skipL0180
+.condpart51
+	LDA #0
+	STA Chic_Tick
+	LDA #82
+	STA player1x
+	LDA #4
+	STA player1y
+ jmp .mainloop
+
+.skipL0180
+.L0181 ;  playfield:
+
+  ifconst pfres
+	  ldx #(12>pfres)*(pfres*pfwidth-1)+(12<=pfres)*47
+  else
+	  ldx #((12*pfwidth-1)*((12*pfwidth-1)<47))+(47*((12*pfwidth-1)>=47))
+  endif
+	jmp pflabel4
+PF_data4
+	.byte %00000000, %00000000
+	if (pfwidth>2)
+	.byte %00000000, %00000000
+ endif
+	.byte %00000000, %00000000
+	if (pfwidth>2)
+	.byte %00000000, %00000000
+ endif
+	.byte %00000000, %00000000
+	if (pfwidth>2)
+	.byte %00000000, %00000000
+ endif
+	.byte %00000000, %00000000
+	if (pfwidth>2)
+	.byte %00000000, %00000000
+ endif
+	.byte %00000000, %00000000
+	if (pfwidth>2)
+	.byte %00000000, %00000000
+ endif
+	.byte %00000000, %00000000
+	if (pfwidth>2)
+	.byte %00000000, %00000000
+ endif
+	.byte %00000000, %00000000
+	if (pfwidth>2)
+	.byte %00000000, %00000000
+ endif
+	.byte %00000000, %00000000
+	if (pfwidth>2)
+	.byte %00000000, %00000000
+ endif
+	.byte %00000000, %00000000
+	if (pfwidth>2)
+	.byte %00000000, %00000000
+ endif
+	.byte %00000000, %00000000
+	if (pfwidth>2)
+	.byte %00000000, %00000000
+ endif
+	.byte %00000000, %00000000
+	if (pfwidth>2)
+	.byte %00000000, %00000000
+ endif
+	.byte %00000000, %00000000
+	if (pfwidth>2)
+	.byte %00000000, %00000000
+ endif
+pflabel4
+	lda PF_data4,x
+	sta playfield,x
+	dex
+	bpl pflabel4
+.L0182 ;  COLUPF = $1C : gosub __Sound : drawscreen
+
+	LDA #$1C
+	STA COLUPF
+ jsr .__Sound
+ jsr drawscreen
+.L0183 ;  if joy0fire then goto __Start else goto ChicJump
+
+ bit INPT4
+	BMI .skipL0183
+.condpart52
+ jmp .__Start
+ jmp .skipelse5
+.skipL0183
+ jmp .ChicJump
+
+.skipelse5
+.
+ ; 
+
+.__Foxy
+ ; __Foxy
+
+.L0184 ;  if doorctl{1} then Fox_Tick = 0 : ballx = 26 : bally = 18 : goto mainloop else Fox_Tick = Fox_Tick + 1
+
+	LDA doorctl
+	AND #2
+	BEQ .skipL0184
+.condpart53
+	LDA #0
+	STA Fox_Tick
+	LDA #26
+	STA ballx
+	LDA #18
+	STA bally
+ jmp .mainloop
+ jmp .skipelse6
+.skipL0184
+	INC Fox_Tick
+.skipelse6
+.L0185 ;  goto mainloop
+
+ jmp .mainloop
+
+.Fox1
+ ; Fox1
+
+.L0186 ;  if doorctl{1} then Fox_Tick = 0 : ballx = 26 : bally = 18 : goto mainloop
+
+	LDA doorctl
+	AND #2
+	BEQ .skipL0186
+.condpart54
+	LDA #0
+	STA Fox_Tick
+	LDA #26
+	STA ballx
+	LDA #18
+	STA bally
+ jmp .mainloop
+
+.skipL0186
+.L0187 ;  ballx  =  34
+
+	LDA #34
+	STA ballx
+.L0188 ;  bally  =  28
+
+	LDA #28
+	STA bally
+.L0189 ;  goto mainloop
+
+ jmp .mainloop
+
+.Fox2
+ ; Fox2
+
+.L0190 ;  if doorctl{1} then Fox_Tick = 0 : ballx = 26 : bally = 18 : goto mainloop
+
+	LDA doorctl
+	AND #2
+	BEQ .skipL0190
+.condpart55
+	LDA #0
+	STA Fox_Tick
+	LDA #26
+	STA ballx
+	LDA #18
+	STA bally
+ jmp .mainloop
+
+.skipL0190
+.L0191 ;  ballx  =  42
+
+	LDA #42
+	STA ballx
+.L0192 ;  bally  =  40
+
+	LDA #40
+	STA bally
+.L0193 ;  goto mainloop
+
+ jmp .mainloop
+
+.Fox3
+ ; Fox3
+
+.L0194 ;  if doorctl{1} then Fox_Tick = 0 : ballx = 26 : bally = 18 : goto mainloop
+
+	LDA doorctl
+	AND #2
+	BEQ .skipL0194
+.condpart56
+	LDA #0
+	STA Fox_Tick
+	LDA #26
+	STA ballx
+	LDA #18
+	STA bally
+ jmp .mainloop
+
+.skipL0194
+.L0195 ;  ballx  =  52
+
+	LDA #52
+	STA ballx
+.L0196 ;  bally  =  52
+
+	LDA #52
+	STA bally
+.L0197 ;  goto mainloop
+
+ jmp .mainloop
+
+.Fox4
+ ; Fox4
+
+.L0198 ;  if doorctl{1} then Fox_Tick = 0 : ballx = 26 : bally = 18 : goto mainloop
+
+	LDA doorctl
+	AND #2
+	BEQ .skipL0198
+.condpart57
+	LDA #0
+	STA Fox_Tick
+	LDA #26
+	STA ballx
+	LDA #18
+	STA bally
+ jmp .mainloop
+
+.skipL0198
+.L0199 ;  ballx  =  60
+
+	LDA #60
+	STA ballx
+.L0200 ;  bally  =  64
+
+	LDA #64
+	STA bally
+.L0201 ;  goto mainloop
+
+ jmp .mainloop
+
+.FoxJump
+ ; FoxJump
+
+.
+ ; 
+
+.
+ ; 
+
+.
+ ; 
+
+.L0202 ;  ballx  =  68
+
+	LDA #68
+	STA ballx
+.L0203 ;  bally  =  81
+
+	LDA #81
+	STA bally
+.L0204 ;  if collision(ball,missile0) then Fox_Tick = 0 : ballx = 26 : bally = 18 : goto mainloop
+
+	bit 	CXM0FB
+	BVC .skipL0204
+.condpart58
+	LDA #0
+	STA Fox_Tick
+	LDA #26
+	STA ballx
+	LDA #18
+	STA bally
+ jmp .mainloop
+
+.skipL0204
+.L0205 ;  playfield:
+
+  ifconst pfres
+	  ldx #(12>pfres)*(pfres*pfwidth-1)+(12<=pfres)*47
+  else
+	  ldx #((12*pfwidth-1)*((12*pfwidth-1)<47))+(47*((12*pfwidth-1)>=47))
+  endif
+	jmp pflabel5
+PF_data5
+	.byte %00000000, %00000000
+	if (pfwidth>2)
+	.byte %00000000, %00000000
+ endif
+	.byte %00000000, %00000000
+	if (pfwidth>2)
+	.byte %00000000, %00000000
+ endif
+	.byte %00000000, %00000000
+	if (pfwidth>2)
+	.byte %00000000, %00000000
+ endif
+	.byte %00000000, %00000000
+	if (pfwidth>2)
+	.byte %00000000, %00000000
+ endif
+	.byte %00000000, %00000000
+	if (pfwidth>2)
+	.byte %00000000, %00000000
+ endif
+	.byte %00000000, %00000000
+	if (pfwidth>2)
+	.byte %00000000, %00000000
+ endif
+	.byte %00000000, %00000000
+	if (pfwidth>2)
+	.byte %00000000, %00000000
+ endif
+	.byte %00000000, %00000000
+	if (pfwidth>2)
+	.byte %00000000, %00000000
+ endif
+	.byte %00000000, %00000000
+	if (pfwidth>2)
+	.byte %00000000, %00000000
+ endif
+	.byte %00000000, %00000000
+	if (pfwidth>2)
+	.byte %00000000, %00000000
+ endif
+	.byte %00000000, %00000000
+	if (pfwidth>2)
+	.byte %00000000, %00000000
+ endif
+	.byte %00000000, %00000000
+	if (pfwidth>2)
+	.byte %00000000, %00000000
+ endif
+pflabel5
+	lda PF_data5,x
+	sta playfield,x
+	dex
+	bpl pflabel5
+.
+ ; 
+
+.L0206 ;  COLUPF = $34 : gosub __Sound : drawscreen
+
+	LDA #$34
+	STA COLUPF
+ jsr .__Sound
+ jsr drawscreen
+.L0207 ;  if joy0fire then goto __Start else goto FoxJump
+
+ bit INPT4
+	BMI .skipL0207
+.condpart59
+ jmp .__Start
+ jmp .skipelse7
+.skipL0207
+ jmp .FoxJump
+
+.skipelse7
+.__Sound
+ ; __Sound
+
+.
+ ; 
+
+.L0208 ;  return
+	RTS
+ if (<*) > (<(*+15))
+	repeat ($100-<*)
+	.byte 0
+	repend
+	endif
+playerL025_0
+	.byte  %01101100
+	.byte  %00100100
+	.byte  %00111101
+	.byte  %00111101
+	.byte  %00111111
+	.byte  %00011100
+	.byte  %00001000
+	.byte  %00011100
+	.byte  %00010100
+	.byte  %00010100
+	.byte  %00110100
+	.byte  %00001100
+	.byte  %00000000
+	.byte  %00000000
+	.byte  %00000000
+	.byte  %00000000
+ if (<*) > (<(*+15))
+	repeat ($100-<*)
+	.byte 0
+	repend
+	endif
+playerL026_1
+	.byte  %01101100
+	.byte  %00100100
+	.byte  %00111100
+	.byte  %00111101
+	.byte  %00111101
+	.byte  %00011111
+	.byte  %00001000
+	.byte  %00011100
+	.byte  %00001000
+	.byte  %00000000
+	.byte  %00000000
+	.byte  %00000000
+	.byte  %00000000
+	.byte  %00000000
+	.byte  %00000000
+	.byte  %00000000
+ if ECHOFIRST
+       echo "    ",[(scoretable - *)]d , "bytes of ROM space left")
+ endif 
+ECHOFIRST = 1
+ 
+ 
+ 
+ ; feel free to modify the score graphics - just keep each digit 8 highj
+ ; and keep the conditional compilation stuff intact
+
+scorelength = (LENDEC+LENHEX+LENSPACE+LENDOLLAR+LENPOUND+LENMRHAPPY+LENMRSAD+LENCOPYRIGHT+LENFUJI+LENHEART+LENDIAMOND+LENSPADE+LENCLUB+LENCOLON+LENBLOCK+LENUNDERLINE+LENARISIDE+LENARIFACE) 
+
+ ifconst ROM2k
+   ORG $F7FC-scorelength
+ else
+   ifconst bankswitch
+     if bankswitch == 8
+       ORG $2FE4-scorelength-bscode_length
+       RORG $FFE4-scorelength-bscode_length
+     endif
+     if bankswitch == 16
+       ORG $4FE4-scorelength-bscode_length
+       RORG $FFE4-scorelength-bscode_length
+     endif
+     if bankswitch == 32
+       ORG $8FE4-scorelength-bscode_length
+       RORG $FFE4-scorelength-bscode_length
+     endif
+   else
+     ORG $FFEC-scorelength
+   endif
+ endif
+
+NOFONT = 0
+STOCK = 1 	;_FONTNAME
+NEWCENTURY = 2	;_FONTNAME
+WHIMSEY = 3	;_FONTNAME
+ALARMCLOCK = 4	;_FONTNAME
+HANDWRITTEN = 5 ;_FONTNAME
+INTERRUPTED = 6 ;_FONTNAME
+TINY = 7	;_FONTNAME
+RETROPUTER = 8	;_FONTNAME
+CURVES = 9	;_FONTNAME
+HUSKY = 10	;_FONTNAME
+SNAKE = 11	;_FONTNAME
+PLOK = 13	;_FONTNAME
+SQUISH = 14  ;_FONTNAME
+TINYTINY = 15  ;_FONTNAME
+
+SYMBOLS = 0 	;_FONTNAME 
+
+; ### setup some defaults
+ ifnconst fontstyle
+fontstyle = STOCK
+ endif
+
+scoretable
+
+ if fontstyle == STOCK
+
+LENDEC = 80
+
+       ;byte %00000000 ; STOCK
+
+       .byte %00111100 ; STOCK
+       .byte %01100110 ; STOCK
+       .byte %01100110 ; STOCK
+       .byte %01100110 ; STOCK
+       .byte %01100110 ; STOCK
+       .byte %01100110 ; STOCK
+       .byte %01100110 ; STOCK
+       .byte %00111100 ; STOCK
+
+       ;byte %00000000 ; STOCK
+
+       .byte %01111110 ; STOCK
+       .byte %00011000 ; STOCK
+       .byte %00011000 ; STOCK
+       .byte %00011000 ; STOCK
+       .byte %00011000 ; STOCK
+       .byte %00111000 ; STOCK
+       .byte %00011000 ; STOCK
+       .byte %00001000 ; STOCK
+
+       ;byte %00000000 ; STOCK
+
+       .byte %01111110 ; STOCK
+       .byte %01100000 ; STOCK
+       .byte %01100000 ; STOCK
+       .byte %00111100 ; STOCK
+       .byte %00000110 ; STOCK
+       .byte %00000110 ; STOCK
+       .byte %01000110 ; STOCK
+       .byte %00111100 ; STOCK
+
+       ;byte %00000000 ; STOCK
+
+       .byte %00111100 ; STOCK
+       .byte %01000110 ; STOCK
+       .byte %00000110 ; STOCK
+       .byte %00000110 ; STOCK
+       .byte %00011100 ; STOCK
+       .byte %00000110 ; STOCK
+       .byte %01000110 ; STOCK
+       .byte %00111100 ; STOCK
+
+       ;byte %00000000 ; STOCK
+
+       .byte %00001100 ; STOCK
+       .byte %00001100 ; STOCK
+       .byte %01111110 ; STOCK
+       .byte %01001100 ; STOCK
+       .byte %01001100 ; STOCK
+       .byte %00101100 ; STOCK
+       .byte %00011100 ; STOCK
+       .byte %00001100 ; STOCK
+
+       ;byte %00000000 ; STOCK
+
+       .byte %00111100 ; STOCK
+       .byte %01000110 ; STOCK
+       .byte %00000110 ; STOCK
+       .byte %00000110 ; STOCK
+       .byte %00111100 ; STOCK
+       .byte %01100000 ; STOCK
+       .byte %01100000 ; STOCK
+       .byte %01111110 ; STOCK
+
+       ;byte %00000000 ; STOCK
+
+       .byte %00111100 ; STOCK
+       .byte %01100110 ; STOCK
+       .byte %01100110 ; STOCK
+       .byte %01100110 ; STOCK
+       .byte %01111100 ; STOCK
+       .byte %01100000 ; STOCK
+       .byte %01100010 ; STOCK
+       .byte %00111100 ; STOCK
+
+       ;byte %00000000 ; STOCK
+
+       .byte %00110000 ; STOCK
+       .byte %00110000 ; STOCK
+       .byte %00110000 ; STOCK
+       .byte %00011000 ; STOCK
+       .byte %00001100 ; STOCK
+       .byte %00000110 ; STOCK
+       .byte %01000010 ; STOCK
+       .byte %00111110 ; STOCK
+
+       ;byte %00000000 ; STOCK
+
+       .byte %00111100 ; STOCK
+       .byte %01100110 ; STOCK
+       .byte %01100110 ; STOCK
+       .byte %01100110 ; STOCK
+       .byte %00111100 ; STOCK
+       .byte %01100110 ; STOCK
+       .byte %01100110 ; STOCK
+       .byte %00111100 ; STOCK
+
+       ;byte %00000000 ; STOCK
+
+       .byte %00111100 ; STOCK
+       .byte %01000110 ; STOCK
+       .byte %00000110 ; STOCK
+       .byte %00111110 ; STOCK
+       .byte %01100110 ; STOCK
+       .byte %01100110 ; STOCK
+       .byte %01100110 ; STOCK
+       .byte %00111100 ; STOCK
+
+       ;byte %00000000 ; STOCK
+
+ ifconst fontcharsHEX 
+LENHEX = 48
+
+       .byte %01100110 ; STOCK
+       .byte %01100110 ; STOCK
+       .byte %01100110 ; STOCK
+       .byte %01111110 ; STOCK
+       .byte %01100110 ; STOCK
+       .byte %01100110 ; STOCK
+       .byte %01100110 ; STOCK
+       .byte %00111100 ; STOCK
+
+       ;byte %00000000 ; STOCK
+
+       .byte %01111100 ; STOCK
+       .byte %01100110 ; STOCK
+       .byte %01100110 ; STOCK
+       .byte %01100110 ; STOCK
+       .byte %01111100 ; STOCK
+       .byte %01100110 ; STOCK
+       .byte %01100110 ; STOCK
+       .byte %01111100 ; STOCK
+
+       ;byte %00000000 ; STOCK
+
+       .byte %00111100 ; STOCK
+       .byte %01100110 ; STOCK
+       .byte %01100000 ; STOCK
+       .byte %01100000 ; STOCK
+       .byte %01100000 ; STOCK
+       .byte %01100000 ; STOCK
+       .byte %01100110 ; STOCK
+       .byte %00111100 ; STOCK
+
+       ;byte %00000000 ; STOCK
+
+       .byte %01111100 ; STOCK
+       .byte %01100110 ; STOCK
+       .byte %01100110 ; STOCK
+       .byte %01100110 ; STOCK
+       .byte %01100110 ; STOCK
+       .byte %01100110 ; STOCK
+       .byte %01100110 ; STOCK
+       .byte %01111100 ; STOCK
+
+       ;byte %00000000 ; STOCK
+
+       .byte %01111110 ; STOCK
+       .byte %01100000 ; STOCK
+       .byte %01100000 ; STOCK
+       .byte %01100000 ; STOCK
+       .byte %01111100 ; STOCK
+       .byte %01100000 ; STOCK
+       .byte %01100000 ; STOCK
+       .byte %01111110 ; STOCK
+
+       ;byte %00000000 ; STOCK
+
+       .byte %01100000 ; STOCK
+       .byte %01100000 ; STOCK
+       .byte %01100000 ; STOCK
+       .byte %01100000 ; STOCK
+       .byte %01111100 ; STOCK
+       .byte %01100000 ; STOCK
+       .byte %01100000 ; STOCK
+       .byte %01111110 ; STOCK
+
+       ;byte %00000000 ; STOCK
+       ;byte %00000000 ; STOCK
+       ;byte %00000000 ; STOCK
+       ;byte %00000000 ; STOCK
+
+ else
+LENHEX = 0
+ endif ; fontcharsHEX 
+ endif ; STOCK
+
+ if fontstyle == NEWCENTURY
+LENDEC = 80
+       ;byte %00000000 ; NEWCENTURY
+
+       .byte %00111100 ; NEWCENTURY
+       .byte %01000010 ; NEWCENTURY
+       .byte %01000010 ; NEWCENTURY
+       .byte %01000010 ; NEWCENTURY
+       .byte %00100100 ; NEWCENTURY
+       .byte %00100100 ; NEWCENTURY
+       .byte %00100100 ; NEWCENTURY
+       .byte %00011000 ; NEWCENTURY
+
+       ;byte %00000000 ; NEWCENTURY
+
+       .byte %00001000 ; NEWCENTURY
+       .byte %00001000 ; NEWCENTURY
+       .byte %00001000 ; NEWCENTURY
+       .byte %00001000 ; NEWCENTURY
+       .byte %00001000 ; NEWCENTURY
+       .byte %00001000 ; NEWCENTURY
+       .byte %00001000 ; NEWCENTURY
+       .byte %00001000 ; NEWCENTURY
+
+       ;byte %00000000 ; NEWCENTURY
+
+       .byte %01111110 ; NEWCENTURY
+       .byte %01000000 ; NEWCENTURY
+       .byte %01000000 ; NEWCENTURY
+       .byte %00100000 ; NEWCENTURY
+       .byte %00011100 ; NEWCENTURY
+       .byte %00000010 ; NEWCENTURY
+       .byte %00000010 ; NEWCENTURY
+       .byte %00011100 ; NEWCENTURY
+
+       ;byte %00000000 ; NEWCENTURY
+
+       .byte %01111100 ; NEWCENTURY
+       .byte %00000010 ; NEWCENTURY
+       .byte %00000010 ; NEWCENTURY
+       .byte %00000010 ; NEWCENTURY
+       .byte %00111100 ; NEWCENTURY
+       .byte %00000010 ; NEWCENTURY
+       .byte %00000010 ; NEWCENTURY
+       .byte %00011100 ; NEWCENTURY
+
+       ;byte %00000000 ; NEWCENTURY
+
+       .byte %00000010 ; NEWCENTURY
+       .byte %00000010 ; NEWCENTURY
+       .byte %00000010 ; NEWCENTURY
+       .byte %00111110 ; NEWCENTURY
+       .byte %00100010 ; NEWCENTURY
+       .byte %00100010 ; NEWCENTURY
+       .byte %00010010 ; NEWCENTURY
+       .byte %00010010 ; NEWCENTURY
+
+       ;byte %00000000 ; NEWCENTURY
+
+       .byte %01111100 ; NEWCENTURY
+       .byte %00000010 ; NEWCENTURY
+       .byte %00000010 ; NEWCENTURY
+       .byte %00000010 ; NEWCENTURY
+       .byte %01111100 ; NEWCENTURY
+       .byte %01000000 ; NEWCENTURY
+       .byte %01000000 ; NEWCENTURY
+       .byte %01111000 ; NEWCENTURY
+
+       ;byte %00000000 ; NEWCENTURY
+
+       .byte %00111100 ; NEWCENTURY
+       .byte %01000010 ; NEWCENTURY
+       .byte %01000010 ; NEWCENTURY
+       .byte %01000010 ; NEWCENTURY
+       .byte %01111100 ; NEWCENTURY
+       .byte %01000000 ; NEWCENTURY
+       .byte %01000000 ; NEWCENTURY
+       .byte %00110000 ; NEWCENTURY
+
+       ;byte %00000000 ; NEWCENTURY
+
+       .byte %00010000 ; NEWCENTURY
+       .byte %00010000 ; NEWCENTURY
+       .byte %00001000 ; NEWCENTURY
+       .byte %00001000 ; NEWCENTURY
+       .byte %00000100 ; NEWCENTURY
+       .byte %00000100 ; NEWCENTURY
+       .byte %00000010 ; NEWCENTURY
+       .byte %00011110 ; NEWCENTURY
+
+       ;byte %00000000 ; NEWCENTURY
+
+       .byte %00111100 ; NEWCENTURY
+       .byte %01000010 ; NEWCENTURY
+       .byte %01000010 ; NEWCENTURY
+       .byte %01000010 ; NEWCENTURY
+       .byte %00111100 ; NEWCENTURY
+       .byte %00100100 ; NEWCENTURY
+       .byte %00100100 ; NEWCENTURY
+       .byte %00011000 ; NEWCENTURY
+
+       ;byte %00000000 ; NEWCENTURY
+
+       .byte %00111100 ; NEWCENTURY
+       .byte %00000010 ; NEWCENTURY
+       .byte %00000010 ; NEWCENTURY
+       .byte %00000010 ; NEWCENTURY
+       .byte %00001110 ; NEWCENTURY
+       .byte %00010010 ; NEWCENTURY
+       .byte %00010010 ; NEWCENTURY
+       .byte %00001100 ; NEWCENTURY
+
+ ifconst fontcharsHEX 
+LENHEX = 48
+
+       ;byte %00000000 ; NEWCENTURY
+
+       .byte %01000010 ; NEWCENTURY
+       .byte %01000010 ; NEWCENTURY
+       .byte %01000010 ; NEWCENTURY
+       .byte %01000010 ; NEWCENTURY
+       .byte %01111100 ; NEWCENTURY
+       .byte %01000100 ; NEWCENTURY
+       .byte %01000100 ; NEWCENTURY
+       .byte %00111000 ; NEWCENTURY
+
+       ;byte %00000000 ; NEWCENTURY
+
+       .byte %01111100 ; NEWCENTURY
+       .byte %01000010 ; NEWCENTURY
+       .byte %01000010 ; NEWCENTURY
+       .byte %01000010 ; NEWCENTURY
+       .byte %01111100 ; NEWCENTURY
+       .byte %01000100 ; NEWCENTURY
+       .byte %01000100 ; NEWCENTURY
+       .byte %01111000 ; NEWCENTURY
+
+       ;byte %00000000 ; NEWCENTURY
+
+       .byte %00111100 ; NEWCENTURY
+       .byte %01000010 ; NEWCENTURY
+       .byte %01000000 ; NEWCENTURY
+       .byte %01000000 ; NEWCENTURY
+       .byte %01000000 ; NEWCENTURY
+       .byte %01000000 ; NEWCENTURY
+       .byte %01000000 ; NEWCENTURY
+       .byte %00111000 ; NEWCENTURY
+
+       ;byte %00000000 ; NEWCENTURY
+
+       .byte %01111100 ; NEWCENTURY
+       .byte %01000010 ; NEWCENTURY
+       .byte %01000010 ; NEWCENTURY
+       .byte %01000010 ; NEWCENTURY
+       .byte %01000010 ; NEWCENTURY
+       .byte %01000100 ; NEWCENTURY
+       .byte %01000100 ; NEWCENTURY
+       .byte %01111000 ; NEWCENTURY
+
+       ;byte %00000000 ; NEWCENTURY
+
+       .byte %01111110 ; NEWCENTURY
+       .byte %01000000 ; NEWCENTURY
+       .byte %01000000 ; NEWCENTURY
+       .byte %01000000 ; NEWCENTURY
+       .byte %01111100 ; NEWCENTURY
+       .byte %01000000 ; NEWCENTURY
+       .byte %01000000 ; NEWCENTURY
+       .byte %01111000 ; NEWCENTURY
+
+       ;byte %00000000 ; NEWCENTURY
+
+       .byte %01000000 ; NEWCENTURY
+       .byte %01000000 ; NEWCENTURY
+       .byte %01000000 ; NEWCENTURY
+       .byte %01000000 ; NEWCENTURY
+       .byte %01111100 ; NEWCENTURY
+       .byte %01000000 ; NEWCENTURY
+       .byte %01000000 ; NEWCENTURY
+       .byte %01111000 ; NEWCENTURY
+
+       ;byte %00000000 ; NEWCENTURY
+       ;byte %00000000 ; NEWCENTURY
+       ;byte %00000000 ; NEWCENTURY
+       ;byte %00000000 ; NEWCENTURY
+
+ else
+LENHEX = 0
+ endif ; fontcharsHEX 
+ endif ; NEWCENTURY
+
+ if fontstyle == WHIMSEY
+LENDEC = 80
+       ;byte %00000000 ; WHIMSEY
+
+       .byte %00111100 ; WHIMSEY
+       .byte %01111110 ; WHIMSEY
+       .byte %01111110 ; WHIMSEY
+       .byte %01111110 ; WHIMSEY
+       .byte %01110110 ; WHIMSEY
+       .byte %01110110 ; WHIMSEY
+       .byte %01110110 ; WHIMSEY
+       .byte %00111100 ; WHIMSEY
+
+       ;byte %00000000 ; WHIMSEY
+
+       .byte %01111110 ; WHIMSEY
+       .byte %01111110 ; WHIMSEY
+       .byte %01111110 ; WHIMSEY
+       .byte %00011000 ; WHIMSEY
+       .byte %00011000 ; WHIMSEY
+       .byte %00011000 ; WHIMSEY
+       .byte %01111000 ; WHIMSEY
+       .byte %00011000 ; WHIMSEY
+
+       ;byte %00000000 ; WHIMSEY
+
+       .byte %01111110 ; WHIMSEY
+       .byte %01111110 ; WHIMSEY
+       .byte %01111110 ; WHIMSEY
+       .byte %01111000 ; WHIMSEY
+       .byte %00111100 ; WHIMSEY
+       .byte %00001110 ; WHIMSEY
+       .byte %01100110 ; WHIMSEY
+       .byte %00111100 ; WHIMSEY
+
+       ;byte %00000000 ; WHIMSEY
+
+       .byte %00111100 ; WHIMSEY
+       .byte %01111110 ; WHIMSEY
+       .byte %01111110 ; WHIMSEY
+       .byte %01101110 ; WHIMSEY
+       .byte %00001110 ; WHIMSEY
+       .byte %00111100 ; WHIMSEY
+       .byte %00011100 ; WHIMSEY
+       .byte %01111110 ; WHIMSEY
+
+       ;byte %00000000 ; WHIMSEY
+
+       .byte %00011100 ; WHIMSEY
+       .byte %00011100 ; WHIMSEY
+       .byte %01111110 ; WHIMSEY
+       .byte %01011100 ; WHIMSEY
+       .byte %01011100 ; WHIMSEY
+       .byte %00011100 ; WHIMSEY
+       .byte %00011100 ; WHIMSEY
+       .byte %00011100 ; WHIMSEY
+
+       ;byte %00000000 ; WHIMSEY
+
+       .byte %00111100 ; WHIMSEY
+       .byte %01111110 ; WHIMSEY
+       .byte %01111110 ; WHIMSEY
+       .byte %01101110 ; WHIMSEY
+       .byte %00001110 ; WHIMSEY
+       .byte %01111100 ; WHIMSEY
+       .byte %01110000 ; WHIMSEY
+       .byte %01111110 ; WHIMSEY
+
+       ;byte %00000000 ; WHIMSEY
+
+       .byte %00111100 ; WHIMSEY
+       .byte %01111110 ; WHIMSEY
+       .byte %01111110 ; WHIMSEY
+       .byte %01110110 ; WHIMSEY
+       .byte %01110110 ; WHIMSEY
+       .byte %01111100 ; WHIMSEY
+       .byte %01110000 ; WHIMSEY
+       .byte %00111110 ; WHIMSEY
+
+       ;byte %00000000 ; WHIMSEY
+
+       .byte %01111000 ; WHIMSEY
+       .byte %01111000 ; WHIMSEY
+       .byte %01111000 ; WHIMSEY
+       .byte %00111100 ; WHIMSEY
+       .byte %00011100 ; WHIMSEY
+       .byte %00001110 ; WHIMSEY
+       .byte %00001110 ; WHIMSEY
+       .byte %01111110 ; WHIMSEY
+
+       ;byte %00000000 ; WHIMSEY
+
+       .byte %00111100 ; WHIMSEY
+       .byte %01111110 ; WHIMSEY
+       .byte %01111110 ; WHIMSEY
+       .byte %01110110 ; WHIMSEY
+       .byte %01110110 ; WHIMSEY
+       .byte %00111100 ; WHIMSEY
+       .byte %01110110 ; WHIMSEY
+       .byte %00111100 ; WHIMSEY
+
+       ;byte %00000000 ; WHIMSEY
+
+       .byte %00111100 ; WHIMSEY
+       .byte %01111110 ; WHIMSEY
+       .byte %01111110 ; WHIMSEY
+       .byte %01110110 ; WHIMSEY
+       .byte %00000110 ; WHIMSEY
+       .byte %00111110 ; WHIMSEY
+       .byte %01110110 ; WHIMSEY
+       .byte %00111100 ; WHIMSEY
+
+ ifconst fontcharsHEX 
+LENHEX = 48
+
+       ;byte %00000000 ; WHIMSEY
+
+       .byte %01110110 ; WHIMSEY
+       .byte %01110110 ; WHIMSEY
+       .byte %01111110 ; WHIMSEY
+       .byte %01111110 ; WHIMSEY
+       .byte %01111110 ; WHIMSEY
+       .byte %01110110 ; WHIMSEY
+       .byte %01110110 ; WHIMSEY
+       .byte %00111100 ; WHIMSEY
+
+       ;byte %00000000 ; WHIMSEY
+
+       .byte %01111100 ; WHIMSEY
+       .byte %01111110 ; WHIMSEY
+       .byte %01111110 ; WHIMSEY
+       .byte %01110110 ; WHIMSEY
+       .byte %01110110 ; WHIMSEY
+       .byte %01111100 ; WHIMSEY
+       .byte %01110110 ; WHIMSEY
+       .byte %01111100 ; WHIMSEY
+
+       ;byte %00000000 ; WHIMSEY
+
+       .byte %00111100 ; WHIMSEY
+       .byte %01111110 ; WHIMSEY
+       .byte %01111110 ; WHIMSEY
+       .byte %01110110 ; WHIMSEY
+       .byte %01110000 ; WHIMSEY
+       .byte %01110000 ; WHIMSEY
+       .byte %01110110 ; WHIMSEY
+       .byte %00111100 ; WHIMSEY
+
+       ;byte %00000000 ; WHIMSEY
+
+       .byte %01111100 ; WHIMSEY
+       .byte %01111110 ; WHIMSEY
+       .byte %01111110 ; WHIMSEY
+       .byte %01111110 ; WHIMSEY
+       .byte %01110110 ; WHIMSEY
+       .byte %01110110 ; WHIMSEY
+       .byte %01110110 ; WHIMSEY
+       .byte %01111100 ; WHIMSEY
+
+       ;byte %00000000 ; WHIMSEY
+
+       .byte %01111110 ; WHIMSEY
+       .byte %01111110 ; WHIMSEY
+       .byte %01111110 ; WHIMSEY
+       .byte %01110000 ; WHIMSEY
+       .byte %01110000 ; WHIMSEY
+       .byte %01111100 ; WHIMSEY
+       .byte %01110000 ; WHIMSEY
+       .byte %01111100 ; WHIMSEY
+
+       ;byte %00000000 ; WHIMSEY
+
+       .byte %01110000 ; WHIMSEY
+       .byte %01110000 ; WHIMSEY
+       .byte %01110000 ; WHIMSEY
+       .byte %01110000 ; WHIMSEY
+       .byte %01110000 ; WHIMSEY
+       .byte %01111100 ; WHIMSEY
+       .byte %01110000 ; WHIMSEY
+       .byte %01111100 ; WHIMSEY
+
+       ;byte %00000000 ; WHIMSEY
+       ;byte %00000000 ; WHIMSEY
+       ;byte %00000000 ; WHIMSEY
+       ;byte %00000000 ; WHIMSEY
+
+ else
+LENHEX = 0
+ endif ; fontcharsHEX
+
+ endif ; WHIMSEY
+
+ if fontstyle == ALARMCLOCK
+LENDEC = 80
+
+       ;byte %00000000 ; ALARMCLOCK
+
+       .byte %00111100 ; ALARMCLOCK
+       .byte %01000010 ; ALARMCLOCK
+       .byte %01000010 ; ALARMCLOCK
+       .byte %01000010 ; ALARMCLOCK
+       .byte %00000000 ; ALARMCLOCK
+       .byte %01000010 ; ALARMCLOCK
+       .byte %01000010 ; ALARMCLOCK
+       .byte %00111100 ; ALARMCLOCK
+
+       ;byte %00000000 ; ALARMCLOCK
+
+       .byte %00000000 ; ALARMCLOCK
+       .byte %00000010 ; ALARMCLOCK
+       .byte %00000010 ; ALARMCLOCK
+       .byte %00000010 ; ALARMCLOCK
+       .byte %00000000 ; ALARMCLOCK
+       .byte %00000010 ; ALARMCLOCK
+       .byte %00000010 ; ALARMCLOCK
+       .byte %00000000 ; ALARMCLOCK
+
+       ;byte %00000000 ; ALARMCLOCK
+
+       .byte %00111100 ; ALARMCLOCK
+       .byte %01000000 ; ALARMCLOCK
+       .byte %01000000 ; ALARMCLOCK
+       .byte %01000000 ; ALARMCLOCK
+       .byte %00111100 ; ALARMCLOCK
+       .byte %00000010 ; ALARMCLOCK
+       .byte %00000010 ; ALARMCLOCK
+       .byte %00111100 ; ALARMCLOCK
+
+       ;byte %00000000 ; ALARMCLOCK
+
+       .byte %00111100 ; ALARMCLOCK
+       .byte %00000010 ; ALARMCLOCK
+       .byte %00000010 ; ALARMCLOCK
+       .byte %00000010 ; ALARMCLOCK
+       .byte %00111100 ; ALARMCLOCK
+       .byte %00000010 ; ALARMCLOCK
+       .byte %00000010 ; ALARMCLOCK
+       .byte %00111100 ; ALARMCLOCK
+
+       ;byte %00000000 ; ALARMCLOCK
+
+       .byte %00000000 ; ALARMCLOCK
+       .byte %00000010 ; ALARMCLOCK
+       .byte %00000010 ; ALARMCLOCK
+       .byte %00000010 ; ALARMCLOCK
+       .byte %00111100 ; ALARMCLOCK
+       .byte %01000010 ; ALARMCLOCK
+       .byte %01000010 ; ALARMCLOCK
+       .byte %00000000 ; ALARMCLOCK
+
+       ;byte %00000000 ; ALARMCLOCK
+
+       .byte %00111100 ; ALARMCLOCK
+       .byte %00000010 ; ALARMCLOCK
+       .byte %00000010 ; ALARMCLOCK
+       .byte %00000010 ; ALARMCLOCK
+       .byte %00111100 ; ALARMCLOCK
+       .byte %01000000 ; ALARMCLOCK
+       .byte %01000000 ; ALARMCLOCK
+       .byte %00111100 ; ALARMCLOCK
+
+       ;byte %00000000 ; ALARMCLOCK
+
+       .byte %00111100 ; ALARMCLOCK
+       .byte %01000010 ; ALARMCLOCK
+       .byte %01000010 ; ALARMCLOCK
+       .byte %01000010 ; ALARMCLOCK
+       .byte %00111100 ; ALARMCLOCK
+       .byte %01000000 ; ALARMCLOCK
+       .byte %01000000 ; ALARMCLOCK
+       .byte %00111100 ; ALARMCLOCK
+
+       ;byte %00000000 ; ALARMCLOCK
+
+       .byte %00000000 ; ALARMCLOCK
+       .byte %00000010 ; ALARMCLOCK
+       .byte %00000010 ; ALARMCLOCK
+       .byte %00000010 ; ALARMCLOCK
+       .byte %00000000 ; ALARMCLOCK
+       .byte %00000010 ; ALARMCLOCK
+       .byte %00000010 ; ALARMCLOCK
+       .byte %00111100 ; ALARMCLOCK
+
+       ;byte %00000000 ; ALARMCLOCK
+
+       .byte %00111100 ; ALARMCLOCK
+       .byte %01000010 ; ALARMCLOCK
+       .byte %01000010 ; ALARMCLOCK
+       .byte %01000010 ; ALARMCLOCK
+       .byte %00111100 ; ALARMCLOCK
+       .byte %01000010 ; ALARMCLOCK
+       .byte %01000010 ; ALARMCLOCK
+       .byte %00111100 ; ALARMCLOCK
+
+       ;byte %00000000 ; ALARMCLOCK
+
+       .byte %00111100 ; ALARMCLOCK
+       .byte %00000010 ; ALARMCLOCK
+       .byte %00000010 ; ALARMCLOCK
+       .byte %00000010 ; ALARMCLOCK
+       .byte %00111100 ; ALARMCLOCK
+       .byte %01000010 ; ALARMCLOCK
+       .byte %01000010 ; ALARMCLOCK
+       .byte %00111100 ; ALARMCLOCK
+
+
+ ifconst fontcharsHEX 
+LENHEX = 48
+       ;byte %00000000 ; ALARMCLOCK
+
+
+       .byte %00000000 ; ALARMCLOCK
+       .byte %01000010 ; ALARMCLOCK
+       .byte %01000010 ; ALARMCLOCK
+       .byte %01000010 ; ALARMCLOCK
+       .byte %00111100 ; ALARMCLOCK
+       .byte %01000010 ; ALARMCLOCK
+       .byte %01000010 ; ALARMCLOCK
+       .byte %00111100 ; ALARMCLOCK
+
+       ;byte %00000000 ; ALARMCLOCK
+
+       .byte %00111100 ; ALARMCLOCK
+       .byte %01000010 ; ALARMCLOCK
+       .byte %01000010 ; ALARMCLOCK
+       .byte %01000010 ; ALARMCLOCK
+       .byte %00111100 ; ALARMCLOCK
+       .byte %01000000 ; ALARMCLOCK
+       .byte %01000000 ; ALARMCLOCK
+       .byte %00000000 ; ALARMCLOCK
+
+       ;byte %00000000 ; ALARMCLOCK
+
+       .byte %00111100 ; ALARMCLOCK
+       .byte %01000000 ; ALARMCLOCK
+       .byte %01000000 ; ALARMCLOCK
+       .byte %01000000 ; ALARMCLOCK
+       .byte %00000000 ; ALARMCLOCK
+       .byte %01000000 ; ALARMCLOCK
+       .byte %01000000 ; ALARMCLOCK
+       .byte %00111100 ; ALARMCLOCK
+
+       ;byte %00000000 ; ALARMCLOCK
+
+       .byte %00111100 ; ALARMCLOCK
+       .byte %01000010 ; ALARMCLOCK
+       .byte %01000010 ; ALARMCLOCK
+       .byte %01000010 ; ALARMCLOCK
+       .byte %00111100 ; ALARMCLOCK
+       .byte %00000010 ; ALARMCLOCK
+       .byte %00000010 ; ALARMCLOCK
+       .byte %00000000 ; ALARMCLOCK
+
+       ;byte %00000000 ; ALARMCLOCK
+
+       .byte %00111100 ; ALARMCLOCK
+       .byte %01000000 ; ALARMCLOCK
+       .byte %01000000 ; ALARMCLOCK
+       .byte %01000000 ; ALARMCLOCK
+       .byte %00111100 ; ALARMCLOCK
+       .byte %01000000 ; ALARMCLOCK
+       .byte %01000000 ; ALARMCLOCK
+       .byte %00111100 ; ALARMCLOCK
+
+       ;byte %00000000 ; ALARMCLOCK
+
+       .byte %00000000 ; ALARMCLOCK
+       .byte %01000000 ; ALARMCLOCK
+       .byte %01000000 ; ALARMCLOCK
+       .byte %01000000 ; ALARMCLOCK
+       .byte %00111100 ; ALARMCLOCK
+       .byte %01000000 ; ALARMCLOCK
+       .byte %01000000 ; ALARMCLOCK
+       .byte %00111100 ; ALARMCLOCK
+
+       ;byte %00000000 ; ALARMCLOCK
+       ;byte %00000000 ; ALARMCLOCK
+       ;byte %00000000 ; ALARMCLOCK
+       ;byte %00000000 ; ALARMCLOCK
+
+ else
+LENHEX = 0
+ endif ; fontcharsHEX
+ endif ; ALARMCLOCK
+
+ if fontstyle == HANDWRITTEN
+LENDEC = 80
+
+       ;byte %00000000 ; HANDWRITTEN
+
+       .byte %00110000 ; HANDWRITTEN
+       .byte %01001000 ; HANDWRITTEN
+       .byte %01001000 ; HANDWRITTEN
+       .byte %01001000 ; HANDWRITTEN
+       .byte %00100100 ; HANDWRITTEN
+       .byte %00100100 ; HANDWRITTEN
+       .byte %00010010 ; HANDWRITTEN
+       .byte %00001100 ; HANDWRITTEN
+
+       ;byte %00000000 ; HANDWRITTEN
+
+       .byte %00010000 ; HANDWRITTEN
+       .byte %00010000 ; HANDWRITTEN
+       .byte %00010000 ; HANDWRITTEN
+       .byte %00001000 ; HANDWRITTEN
+       .byte %00001000 ; HANDWRITTEN
+       .byte %00001000 ; HANDWRITTEN
+       .byte %00000100 ; HANDWRITTEN
+       .byte %00000100 ; HANDWRITTEN
+
+       ;byte %00000000 ; HANDWRITTEN
+
+       .byte %01110000 ; HANDWRITTEN
+       .byte %01001100 ; HANDWRITTEN
+       .byte %01000000 ; HANDWRITTEN
+       .byte %00100000 ; HANDWRITTEN
+       .byte %00011000 ; HANDWRITTEN
+       .byte %00000100 ; HANDWRITTEN
+       .byte %00100010 ; HANDWRITTEN
+       .byte %00011100 ; HANDWRITTEN
+
+       ;byte %00000000 ; HANDWRITTEN
+
+       .byte %00110000 ; HANDWRITTEN
+       .byte %01001000 ; HANDWRITTEN
+       .byte %00000100 ; HANDWRITTEN
+       .byte %00000100 ; HANDWRITTEN
+       .byte %00011000 ; HANDWRITTEN
+       .byte %00000100 ; HANDWRITTEN
+       .byte %00100010 ; HANDWRITTEN
+       .byte %00011100 ; HANDWRITTEN
+
+       ;byte %00000000 ; HANDWRITTEN
+
+       .byte %00010000 ; HANDWRITTEN
+       .byte %00010000 ; HANDWRITTEN
+       .byte %00001000 ; HANDWRITTEN
+       .byte %01111000 ; HANDWRITTEN
+       .byte %01000100 ; HANDWRITTEN
+       .byte %00100100 ; HANDWRITTEN
+       .byte %00010010 ; HANDWRITTEN
+       .byte %00000010 ; HANDWRITTEN
+
+       ;byte %00000000 ; HANDWRITTEN
+
+       .byte %00110000 ; HANDWRITTEN
+       .byte %01001000 ; HANDWRITTEN
+       .byte %00000100 ; HANDWRITTEN
+       .byte %00000100 ; HANDWRITTEN
+       .byte %00011000 ; HANDWRITTEN
+       .byte %00100000 ; HANDWRITTEN
+       .byte %00010010 ; HANDWRITTEN
+       .byte %00001100 ; HANDWRITTEN
+
+       ;byte %00000000 ; HANDWRITTEN
+
+       .byte %00010000 ; HANDWRITTEN
+       .byte %00101000 ; HANDWRITTEN
+       .byte %00100100 ; HANDWRITTEN
+       .byte %00100100 ; HANDWRITTEN
+       .byte %00011000 ; HANDWRITTEN
+       .byte %00010000 ; HANDWRITTEN
+       .byte %00001000 ; HANDWRITTEN
+       .byte %00000110 ; HANDWRITTEN
+
+       ;byte %00000000 ; HANDWRITTEN
+
+       .byte %00010000 ; HANDWRITTEN
+       .byte %00010000 ; HANDWRITTEN
+       .byte %00010000 ; HANDWRITTEN
+       .byte %00001000 ; HANDWRITTEN
+       .byte %00000100 ; HANDWRITTEN
+       .byte %00000100 ; HANDWRITTEN
+       .byte %00110010 ; HANDWRITTEN
+       .byte %00001110 ; HANDWRITTEN
+
+       ;byte %00000000 ; HANDWRITTEN
+
+       .byte %00110000 ; HANDWRITTEN
+       .byte %01001000 ; HANDWRITTEN
+       .byte %01000100 ; HANDWRITTEN
+       .byte %00100100 ; HANDWRITTEN
+       .byte %00011100 ; HANDWRITTEN
+       .byte %00010010 ; HANDWRITTEN
+       .byte %00001010 ; HANDWRITTEN
+       .byte %00000110 ; HANDWRITTEN
+
+       ;byte %00000000 ; HANDWRITTEN
+
+       .byte %00010000 ; HANDWRITTEN
+       .byte %00010000 ; HANDWRITTEN
+       .byte %00001000 ; HANDWRITTEN
+       .byte %00001000 ; HANDWRITTEN
+       .byte %00011100 ; HANDWRITTEN
+       .byte %00100100 ; HANDWRITTEN
+       .byte %00010010 ; HANDWRITTEN
+       .byte %00001100 ; HANDWRITTEN
+
+ ifconst fontcharsHEX 
+LENHEX = 48
+
+       ;byte %00000000 ; HANDWRITTEN
+
+       .byte %00110110 ; HANDWRITTEN
+       .byte %01001000 ; HANDWRITTEN
+       .byte %01001000 ; HANDWRITTEN
+       .byte %01001000 ; HANDWRITTEN
+       .byte %00100100 ; HANDWRITTEN
+       .byte %00100100 ; HANDWRITTEN
+       .byte %00010010 ; HANDWRITTEN
+       .byte %00001110 ; HANDWRITTEN
+
+       ;byte %00000000 ; HANDWRITTEN
+
+       .byte %11110000 ; HANDWRITTEN
+       .byte %01001000 ; HANDWRITTEN
+       .byte %01000100 ; HANDWRITTEN
+       .byte %00100100 ; HANDWRITTEN
+       .byte %00111100 ; HANDWRITTEN
+       .byte %00010010 ; HANDWRITTEN
+       .byte %00010010 ; HANDWRITTEN
+       .byte %00001100 ; HANDWRITTEN
+
+       ;byte %00000000 ; HANDWRITTEN
+
+       .byte %00110000 ; HANDWRITTEN
+       .byte %01001000 ; HANDWRITTEN
+       .byte %01001000 ; HANDWRITTEN
+       .byte %01000000 ; HANDWRITTEN
+       .byte %00100000 ; HANDWRITTEN
+       .byte %00100100 ; HANDWRITTEN
+       .byte %00010100 ; HANDWRITTEN
+       .byte %00001000 ; HANDWRITTEN
+
+       ;byte %00000000 ; HANDWRITTEN
+
+       .byte %01111000 ; HANDWRITTEN
+       .byte %01000100 ; HANDWRITTEN
+       .byte %01000100 ; HANDWRITTEN
+       .byte %00100100 ; HANDWRITTEN
+       .byte %00100010 ; HANDWRITTEN
+       .byte %00010010 ; HANDWRITTEN
+       .byte %00010010 ; HANDWRITTEN
+       .byte %00001100 ; HANDWRITTEN
+
+       ;byte %00000000 ; HANDWRITTEN
+
+       .byte %00110000 ; HANDWRITTEN
+       .byte %01001000 ; HANDWRITTEN
+       .byte %01000000 ; HANDWRITTEN
+       .byte %00100000 ; HANDWRITTEN
+       .byte %00011000 ; HANDWRITTEN
+       .byte %00010000 ; HANDWRITTEN
+       .byte %00010010 ; HANDWRITTEN
+       .byte %00001100 ; HANDWRITTEN
+
+       ;byte %00000000 ; HANDWRITTEN
+
+       .byte %01000000 ; HANDWRITTEN
+       .byte %01000000 ; HANDWRITTEN
+       .byte %01000000 ; HANDWRITTEN
+       .byte %00100000 ; HANDWRITTEN
+       .byte %00111000 ; HANDWRITTEN
+       .byte %00010000 ; HANDWRITTEN
+       .byte %00010010 ; HANDWRITTEN
+       .byte %00001100 ; HANDWRITTEN
+
+       ;byte %00000000 ; HANDWRITTEN
+       ;byte %00000000 ; HANDWRITTEN
+       ;byte %00000000 ; HANDWRITTEN
+       ;byte %00000000 ; HANDWRITTEN
+
+ else
+LENHEX = 0
+ endif ; fontcharsHEX
+ endif ; HANDWRITTEN
+
+ if fontstyle == INTERRUPTED
+LENDEC = 80
+
+       ;byte %00000000 ; INTERRUPTED
+
+       .byte %00110100 ; INTERRUPTED
+       .byte %01100110 ; INTERRUPTED
+       .byte %01100110 ; INTERRUPTED
+       .byte %01100110 ; INTERRUPTED
+       .byte %01100110 ; INTERRUPTED
+       .byte %01100110 ; INTERRUPTED
+       .byte %01100110 ; INTERRUPTED
+       .byte %00110100 ; INTERRUPTED
+
+       ;byte %00000000 ; INTERRUPTED
+
+       .byte %00111100 ; INTERRUPTED
+       .byte %00000000 ; INTERRUPTED
+       .byte %00011000 ; INTERRUPTED
+       .byte %00011000 ; INTERRUPTED
+       .byte %00011000 ; INTERRUPTED
+       .byte %00011000 ; INTERRUPTED
+       .byte %00011000 ; INTERRUPTED
+       .byte %00111000 ; INTERRUPTED
+
+       ;byte %00000000 ; INTERRUPTED
+
+       .byte %01101110 ; INTERRUPTED
+       .byte %01100000 ; INTERRUPTED
+       .byte %00110000 ; INTERRUPTED
+       .byte %00011000 ; INTERRUPTED
+       .byte %00001100 ; INTERRUPTED
+       .byte %00000110 ; INTERRUPTED
+       .byte %01000110 ; INTERRUPTED
+       .byte %00111100 ; INTERRUPTED
+
+       ;byte %00000000 ; INTERRUPTED
+
+       .byte %01111100 ; INTERRUPTED
+       .byte %00000110 ; INTERRUPTED
+       .byte %00000110 ; INTERRUPTED
+       .byte %00000110 ; INTERRUPTED
+       .byte %01110110 ; INTERRUPTED
+       .byte %00000110 ; INTERRUPTED
+       .byte %00000110 ; INTERRUPTED
+       .byte %01110100 ; INTERRUPTED
+
+       ;byte %00000000 ; INTERRUPTED
+
+       .byte %00000110 ; INTERRUPTED
+       .byte %00000110 ; INTERRUPTED
+       .byte %00000110 ; INTERRUPTED
+       .byte %00000110 ; INTERRUPTED
+       .byte %01110110 ; INTERRUPTED
+       .byte %01100110 ; INTERRUPTED
+       .byte %01100110 ; INTERRUPTED
+       .byte %01100110 ; INTERRUPTED
+
+       ;byte %00000000 ; INTERRUPTED
+
+       .byte %01111100 ; INTERRUPTED
+       .byte %00000110 ; INTERRUPTED
+       .byte %00000110 ; INTERRUPTED
+       .byte %00000110 ; INTERRUPTED
+       .byte %01111100 ; INTERRUPTED
+       .byte %01100000 ; INTERRUPTED
+       .byte %01100000 ; INTERRUPTED
+       .byte %01101110 ; INTERRUPTED
+
+       ;byte %00000000 ; INTERRUPTED
+
+       .byte %00101100 ; INTERRUPTED
+       .byte %01100110 ; INTERRUPTED
+       .byte %01100110 ; INTERRUPTED
+       .byte %01100110 ; INTERRUPTED
+       .byte %01101100 ; INTERRUPTED
+       .byte %01100000 ; INTERRUPTED
+       .byte %00110000 ; INTERRUPTED
+       .byte %00011100 ; INTERRUPTED
+
+       ;byte %00000000 ; INTERRUPTED
+
+       .byte %00011000 ; INTERRUPTED
+       .byte %00011000 ; INTERRUPTED
+       .byte %00011000 ; INTERRUPTED
+       .byte %00011100 ; INTERRUPTED
+       .byte %00001110 ; INTERRUPTED
+       .byte %00000110 ; INTERRUPTED
+       .byte %00000000 ; INTERRUPTED
+       .byte %01111110 ; INTERRUPTED
+
+       ;byte %00000000 ; INTERRUPTED
+
+       .byte %00110100 ; INTERRUPTED
+       .byte %01100110 ; INTERRUPTED
+       .byte %01100110 ; INTERRUPTED
+       .byte %01100110 ; INTERRUPTED
+       .byte %00110100 ; INTERRUPTED
+       .byte %01100110 ; INTERRUPTED
+       .byte %01100110 ; INTERRUPTED
+       .byte %00110100 ; INTERRUPTED
+
+       ;byte %00000000 ; INTERRUPTED
+
+       .byte %00111000 ; INTERRUPTED
+       .byte %00001100 ; INTERRUPTED
+       .byte %00000110 ; INTERRUPTED
+       .byte %00110110 ; INTERRUPTED
+       .byte %01100110 ; INTERRUPTED
+       .byte %01100110 ; INTERRUPTED
+       .byte %01100110 ; INTERRUPTED
+       .byte %00110100 ; INTERRUPTED
+
+ ifconst fontcharsHEX 
+LENHEX = 48
+
+       ;byte %00000000 ; INTERRUPTED
+
+       .byte %01100110 ; INTERRUPTED
+       .byte %01100110 ; INTERRUPTED
+       .byte %01100110 ; INTERRUPTED
+       .byte %01100110 ; INTERRUPTED
+       .byte %01110110 ; INTERRUPTED
+       .byte %01100110 ; INTERRUPTED
+       .byte %01100110 ; INTERRUPTED
+       .byte %00111100 ; INTERRUPTED
+
+       ;byte %00000000 ; INTERRUPTED
+
+       .byte %01110100 ; INTERRUPTED
+       .byte %01100110 ; INTERRUPTED
+       .byte %01100110 ; INTERRUPTED
+       .byte %01100110 ; INTERRUPTED
+       .byte %01110100 ; INTERRUPTED
+       .byte %01100110 ; INTERRUPTED
+       .byte %01100110 ; INTERRUPTED
+       .byte %01110100 ; INTERRUPTED
+
+       ;byte %00000000 ; INTERRUPTED
+
+       .byte %00101100 ; INTERRUPTED
+       .byte %01100110 ; INTERRUPTED
+       .byte %01100000 ; INTERRUPTED
+       .byte %01100000 ; INTERRUPTED
+       .byte %01100000 ; INTERRUPTED
+       .byte %01100000 ; INTERRUPTED
+       .byte %01100110 ; INTERRUPTED
+       .byte %00101100 ; INTERRUPTED
+
+       ;byte %00000000 ; INTERRUPTED
+
+       .byte %01111100 ; INTERRUPTED
+       .byte %01100110 ; INTERRUPTED
+       .byte %01100110 ; INTERRUPTED
+       .byte %01100110 ; INTERRUPTED
+       .byte %01100110 ; INTERRUPTED
+       .byte %01100110 ; INTERRUPTED
+       .byte %01100110 ; INTERRUPTED
+       .byte %01101100 ; INTERRUPTED
+
+       ;byte %00000000 ; INTERRUPTED
+
+       .byte %01111110 ; INTERRUPTED
+       .byte %01100000 ; INTERRUPTED
+       .byte %01100000 ; INTERRUPTED
+       .byte %01100000 ; INTERRUPTED
+       .byte %01101110 ; INTERRUPTED
+       .byte %01100000 ; INTERRUPTED
+       .byte %01100000 ; INTERRUPTED
+       .byte %01101110 ; INTERRUPTED
+
+       ;byte %00000000 ; INTERRUPTED
+
+       .byte %01100000 ; INTERRUPTED
+       .byte %01100000 ; INTERRUPTED
+       .byte %01100000 ; INTERRUPTED
+       .byte %01100000 ; INTERRUPTED
+       .byte %01101110 ; INTERRUPTED
+       .byte %01100000 ; INTERRUPTED
+       .byte %01100000 ; INTERRUPTED
+       .byte %01101110 ; INTERRUPTED
+
+       ;byte %00000000 ; INTERRUPTED
+       ;byte %00000000 ; INTERRUPTED
+       ;byte %00000000 ; INTERRUPTED
+       ;byte %00000000 ; INTERRUPTED
+
+ else
+LENHEX = 0
+ endif ; fontcharsHEX
+ endif ; INTERRUPTED
+
+
+ if fontstyle == TINY
+LENDEC = 80
+
+       ;byte %00000000 ; TINY
+
+       .byte %00000000 ; TINY
+       .byte %00111000 ; TINY
+       .byte %00101000 ; TINY
+       .byte %00101000 ; TINY
+       .byte %00101000 ; TINY
+       .byte %00111000 ; TINY
+       .byte %00000000 ; TINY
+       .byte %00000000 ; TINY
+
+       ;byte %00000000 ; TINY
+
+       .byte %00000000 ; TINY
+       .byte %00010000 ; TINY
+       .byte %00010000 ; TINY
+       .byte %00010000 ; TINY
+       .byte %00010000 ; TINY
+       .byte %00010000 ; TINY
+       .byte %00000000 ; TINY
+       .byte %00000000 ; TINY
+
+       ;byte %00000000 ; TINY
+
+       .byte %00000000 ; TINY
+       .byte %00111000 ; TINY
+       .byte %00100000 ; TINY
+       .byte %00111000 ; TINY
+       .byte %00001000 ; TINY
+       .byte %00111000 ; TINY
+       .byte %00000000 ; TINY
+       .byte %00000000 ; TINY
+
+       ;byte %00000000 ; TINY
+
+       .byte %00000000 ; TINY
+       .byte %00111000 ; TINY
+       .byte %00001000 ; TINY
+       .byte %00111000 ; TINY
+       .byte %00001000 ; TINY
+       .byte %00111000 ; TINY
+       .byte %00000000 ; TINY
+       .byte %00000000 ; TINY
+
+       ;byte %00000000 ; TINY
+
+       .byte %00000000 ; TINY
+       .byte %00001000 ; TINY
+       .byte %00001000 ; TINY
+       .byte %00111000 ; TINY
+       .byte %00101000 ; TINY
+       .byte %00101000 ; TINY
+       .byte %00000000 ; TINY
+       .byte %00000000 ; TINY
+
+       ;byte %00000000 ; TINY
+
+       .byte %00000000 ; TINY
+       .byte %00111000 ; TINY
+       .byte %00001000 ; TINY
+       .byte %00111000 ; TINY
+       .byte %00100000 ; TINY
+       .byte %00111000 ; TINY
+       .byte %00000000 ; TINY
+       .byte %00000000 ; TINY
+
+       ;byte %00000000 ; TINY
+
+       .byte %00000000 ; TINY
+       .byte %00111000 ; TINY
+       .byte %00101000 ; TINY
+       .byte %00111000 ; TINY
+       .byte %00100000 ; TINY
+       .byte %00111000 ; TINY
+       .byte %00000000 ; TINY
+       .byte %00000000 ; TINY
+
+       ;byte %00000000 ; TINY
+
+       .byte %00000000 ; TINY
+       .byte %00001000 ; TINY
+       .byte %00001000 ; TINY
+       .byte %00001000 ; TINY
+       .byte %00001000 ; TINY
+       .byte %00111000 ; TINY
+       .byte %00000000 ; TINY
+       .byte %00000000 ; TINY
+
+       ;byte %00000000 ; TINY
+
+       .byte %00000000 ; TINY
+       .byte %00111000 ; TINY
+       .byte %00101000 ; TINY
+       .byte %00111000 ; TINY
+       .byte %00101000 ; TINY
+       .byte %00111000 ; TINY
+       .byte %00000000 ; TINY
+       .byte %00000000 ; TINY
+
+       ;byte %00000000 ; TINY
+
+       .byte %00000000 ; TINY
+       .byte %00001000 ; TINY
+       .byte %00001000 ; TINY
+       .byte %00111000 ; TINY
+       .byte %00101000 ; TINY
+       .byte %00111000 ; TINY
+       .byte %00000000 ; TINY
+       .byte %00000000 ; TINY
+
+ ifconst fontcharsHEX 
+LENHEX = 48
+
+       ;byte %00000000 ; TINY
+
+       .byte %00000000 ; TINY
+       .byte %00101000 ; TINY
+       .byte %00101000 ; TINY
+       .byte %00111000 ; TINY
+       .byte %00101000 ; TINY
+       .byte %00111000 ; TINY
+       .byte %00000000 ; TINY
+       .byte %00000000 ; TINY
+
+       ;byte %00000000 ; TINY
+
+       .byte %00000000 ; TINY
+       .byte %00110000 ; TINY
+       .byte %00101000 ; TINY
+       .byte %00110000 ; TINY
+       .byte %00101000 ; TINY
+       .byte %00110000 ; TINY
+       .byte %00000000 ; TINY
+       .byte %00000000 ; TINY
+
+       ;byte %00000000 ; TINY
+
+       .byte %00000000 ; TINY
+       .byte %00111000 ; TINY
+       .byte %00100000 ; TINY
+       .byte %00100000 ; TINY
+       .byte %00100000 ; TINY
+       .byte %00111000 ; TINY
+       .byte %00000000 ; TINY
+       .byte %00000000 ; TINY
+
+       ;byte %00000000 ; TINY
+
+       .byte %00000000 ; TINY
+       .byte %00110000 ; TINY
+       .byte %00101000 ; TINY
+       .byte %00101000 ; TINY
+       .byte %00101000 ; TINY
+       .byte %00110000 ; TINY
+       .byte %00000000 ; TINY
+       .byte %00000000 ; TINY
+
+       ;byte %00000000 ; TINY
+
+       .byte %00000000 ; TINY
+       .byte %00111000 ; TINY
+       .byte %00100000 ; TINY
+       .byte %00111000 ; TINY
+       .byte %00100000 ; TINY
+       .byte %00111000 ; TINY
+       .byte %00000000 ; TINY
+       .byte %00000000 ; TINY
+
+       ;byte %00000000 ; TINY
+
+       .byte %00000000 ; TINY
+       .byte %00100000 ; TINY
+       .byte %00100000 ; TINY
+       .byte %00111000 ; TINY
+       .byte %00100000 ; TINY
+       .byte %00111000 ; TINY
+       .byte %00000000 ; TINY
+       .byte %00000000 ; TINY
+
+       ;byte %00000000 ; TINY
+       ;byte %00000000 ; TINY
+       ;byte %00000000 ; TINY
+       ;byte %00000000 ; TINY
+
+ else
+LENHEX = 0
+
+ endif ; fontcharsHEX
+ endif ; TINY
+
+ if fontstyle == RETROPUTER
+LENDEC = 80
+
+       ;byte %00000000 ; RETROPUTER
+
+       .byte %01111110 ; RETROPUTER
+       .byte %01000110 ; RETROPUTER
+       .byte %01000110 ; RETROPUTER
+       .byte %01000110 ; RETROPUTER
+       .byte %01100010 ; RETROPUTER
+       .byte %01100010 ; RETROPUTER
+       .byte %01100010 ; RETROPUTER
+       .byte %01111110 ; RETROPUTER
+
+       ;byte %00000000 ; RETROPUTER
+
+       .byte %00111000 ; RETROPUTER
+       .byte %00111000 ; RETROPUTER
+       .byte %00111000 ; RETROPUTER
+       .byte %00111000 ; RETROPUTER
+       .byte %00011000 ; RETROPUTER
+       .byte %00011000 ; RETROPUTER
+       .byte %00011000 ; RETROPUTER
+       .byte %00011000 ; RETROPUTER
+
+       ;byte %00000000 ; RETROPUTER
+
+       .byte %01111110 ; RETROPUTER
+       .byte %01100000 ; RETROPUTER
+       .byte %01100000 ; RETROPUTER
+       .byte %01100000 ; RETROPUTER
+       .byte %00111110 ; RETROPUTER
+       .byte %00000010 ; RETROPUTER
+       .byte %01000010 ; RETROPUTER
+       .byte %01111110 ; RETROPUTER
+
+       ;byte %00000000 ; RETROPUTER
+
+       .byte %01111110 ; RETROPUTER
+       .byte %01000110 ; RETROPUTER
+       .byte %00000110 ; RETROPUTER
+       .byte %00000110 ; RETROPUTER
+       .byte %00111110 ; RETROPUTER
+       .byte %00000010 ; RETROPUTER
+       .byte %01000010 ; RETROPUTER
+       .byte %01111110 ; RETROPUTER
+
+       ;byte %00000000 ; RETROPUTER
+
+       .byte %00001100 ; RETROPUTER
+       .byte %00001100 ; RETROPUTER
+       .byte %00001100 ; RETROPUTER
+       .byte %01111110 ; RETROPUTER
+       .byte %01000100 ; RETROPUTER
+       .byte %01000100 ; RETROPUTER
+       .byte %01000100 ; RETROPUTER
+       .byte %00000100 ; RETROPUTER
+
+       ;byte %00000000 ; RETROPUTER
+
+       .byte %01111110 ; RETROPUTER
+       .byte %01000110 ; RETROPUTER
+       .byte %00000110 ; RETROPUTER
+       .byte %00000110 ; RETROPUTER
+       .byte %01111100 ; RETROPUTER
+       .byte %01000000 ; RETROPUTER
+       .byte %01000000 ; RETROPUTER
+       .byte %01111110 ; RETROPUTER
+
+       ;byte %00000000 ; RETROPUTER
+
+       .byte %01111110 ; RETROPUTER
+       .byte %01000110 ; RETROPUTER
+       .byte %01000110 ; RETROPUTER
+       .byte %01000110 ; RETROPUTER
+       .byte %01111100 ; RETROPUTER
+       .byte %01000000 ; RETROPUTER
+       .byte %01000010 ; RETROPUTER
+       .byte %01111110 ; RETROPUTER
+
+       ;byte %00000000 ; RETROPUTER
+
+       .byte %00001100 ; RETROPUTER
+       .byte %00001100 ; RETROPUTER
+       .byte %00001100 ; RETROPUTER
+       .byte %00001100 ; RETROPUTER
+       .byte %00000100 ; RETROPUTER
+       .byte %00000010 ; RETROPUTER
+       .byte %01000010 ; RETROPUTER
+       .byte %01111110 ; RETROPUTER
+
+       ;byte %00000000 ; RETROPUTER
+
+       .byte %01111110 ; RETROPUTER
+       .byte %01000110 ; RETROPUTER
+       .byte %01000110 ; RETROPUTER
+       .byte %01000110 ; RETROPUTER
+       .byte %01111110 ; RETROPUTER
+       .byte %01000010 ; RETROPUTER
+       .byte %01000010 ; RETROPUTER
+       .byte %01111110 ; RETROPUTER
+
+       ;byte %00000000 ; RETROPUTER
+
+       .byte %00000110 ; RETROPUTER
+       .byte %00000110 ; RETROPUTER
+       .byte %00000110 ; RETROPUTER
+       .byte %00000010 ; RETROPUTER
+       .byte %01111110 ; RETROPUTER
+       .byte %01000010 ; RETROPUTER
+       .byte %01000010 ; RETROPUTER
+       .byte %01111110 ; RETROPUTER
+
+ ifconst fontcharsHEX 
+LENHEX = 48
+
+       ;byte %00000000  ; RETROPUTER
+
+       .byte %01100010 ; RETROPUTER
+       .byte %01100010 ; RETROPUTER
+       .byte %01100010 ; RETROPUTER
+       .byte %01000010 ; RETROPUTER
+       .byte %01111110 ; RETROPUTER
+       .byte %01000010 ; RETROPUTER
+       .byte %01000010 ; RETROPUTER
+       .byte %01111110 ; RETROPUTER
+
+       ;byte %00000000 ; RETROPUTER
+
+       .byte %01111110 ; RETROPUTER
+       .byte %01100010 ; RETROPUTER
+       .byte %01100010 ; RETROPUTER
+       .byte %01000010 ; RETROPUTER
+       .byte %01111100 ; RETROPUTER
+       .byte %01000010 ; RETROPUTER
+       .byte %01000010 ; RETROPUTER
+       .byte %01111110 ; RETROPUTER
+
+       ;byte %00000000 ; RETROPUTER
+
+       .byte %01111110 ; RETROPUTER
+       .byte %01100010 ; RETROPUTER
+       .byte %01100010 ; RETROPUTER
+       .byte %01100000 ; RETROPUTER
+       .byte %01000000 ; RETROPUTER
+       .byte %01000000 ; RETROPUTER
+       .byte %01000010 ; RETROPUTER
+       .byte %01111110 ; RETROPUTER
+
+       ;byte %00000000 ; RETROPUTER
+
+       .byte %01111100 ; RETROPUTER
+       .byte %01100010 ; RETROPUTER
+       .byte %01100010 ; RETROPUTER
+       .byte %01100010 ; RETROPUTER
+       .byte %01000010 ; RETROPUTER
+       .byte %01000010 ; RETROPUTER
+       .byte %01000010 ; RETROPUTER
+       .byte %01111100 ; RETROPUTER
+
+       ;byte %00000000 ; RETROPUTER
+
+       .byte %01111110 ; RETROPUTER
+       .byte %01100010 ; RETROPUTER
+       .byte %01100000 ; RETROPUTER
+       .byte %01000000 ; RETROPUTER
+       .byte %01111100 ; RETROPUTER
+       .byte %01000000 ; RETROPUTER
+       .byte %01000010 ; RETROPUTER
+       .byte %01111110 ; RETROPUTER
+
+       ;byte %00000000 ; RETROPUTER
+
+       .byte %01100000 ; RETROPUTER
+       .byte %01100000 ; RETROPUTER
+       .byte %01100000 ; RETROPUTER
+       .byte %01000000 ; RETROPUTER
+       .byte %01111100 ; RETROPUTER
+       .byte %01000000 ; RETROPUTER
+       .byte %01000010 ; RETROPUTER
+       .byte %01111110 ; RETROPUTER
+
+       ;byte %00000000 ; RETROPUTER
+       ;byte %00000000 ; RETROPUTER
+       ;byte %00000000 ; RETROPUTER
+       ;byte %00000000 ; RETROPUTER
+
+ else
+LENHEX = 0
+ endif ; fontcharsHEX
+ endif ; RETROPUTER
+
+ if fontstyle == CURVES
+
+LENDEC = 80
+
+       ;byte %00000000 ; CURVES
+
+       .byte %00111100 ; CURVES
+       .byte %01111110 ; CURVES
+       .byte %01100110 ; CURVES
+       .byte %01100110 ; CURVES
+       .byte %01100110 ; CURVES
+       .byte %01100110 ; CURVES
+       .byte %01111110 ; CURVES
+       .byte %00111100 ; CURVES
+
+       ;byte %00000000 ; CURVES
+
+       .byte %00011000 ; CURVES
+       .byte %00011000 ; CURVES
+       .byte %00011000 ; CURVES
+       .byte %00011000 ; CURVES
+       .byte %00011000 ; CURVES
+       .byte %00011000 ; CURVES
+       .byte %01111000 ; CURVES
+       .byte %01110000 ; CURVES
+
+       ;byte %00000000 ; CURVES
+
+       .byte %01111110 ; CURVES
+       .byte %01111110 ; CURVES
+       .byte %01100000 ; CURVES
+       .byte %01111100 ; CURVES
+       .byte %00111110 ; CURVES
+       .byte %00000110 ; CURVES
+       .byte %01111110 ; CURVES
+       .byte %01111100 ; CURVES
+
+       ;byte %00000000 ; CURVES
+
+       .byte %01111100 ; CURVES
+       .byte %01111110 ; CURVES
+       .byte %00001110 ; CURVES
+       .byte %00111100 ; CURVES
+       .byte %00111100 ; CURVES
+       .byte %00001110 ; CURVES
+       .byte %01111110 ; CURVES
+       .byte %01111100 ; CURVES
+
+       ;byte %00000000 ; CURVES
+
+       .byte %00000110 ; CURVES
+       .byte %00000110 ; CURVES
+       .byte %00111110 ; CURVES
+       .byte %01111110 ; CURVES
+       .byte %01100110 ; CURVES
+       .byte %01100110 ; CURVES
+       .byte %01100110 ; CURVES
+       .byte %01100110 ; CURVES
+
+       ;byte %00000000 ; CURVES
+
+       .byte %01111100 ; CURVES
+       .byte %01111110 ; CURVES
+       .byte %00000110 ; CURVES
+       .byte %01111110 ; CURVES
+       .byte %01111100 ; CURVES
+       .byte %01100000 ; CURVES
+       .byte %01111110 ; CURVES
+       .byte %01111110 ; CURVES
+
+       ;byte %00000000 ; CURVES
+
+       .byte %00111100 ; CURVES
+       .byte %01111110 ; CURVES
+       .byte %01100110 ; CURVES
+       .byte %01111110 ; CURVES
+       .byte %01111100 ; CURVES
+       .byte %01100000 ; CURVES
+       .byte %01111110 ; CURVES
+       .byte %00111110 ; CURVES
+
+       ;byte %00000000 ; CURVES
+
+       .byte %00000110 ; CURVES
+       .byte %00000110 ; CURVES
+       .byte %00000110 ; CURVES
+       .byte %00000110 ; CURVES
+       .byte %00000110 ; CURVES
+       .byte %01100110 ; CURVES
+       .byte %01111110 ; CURVES
+       .byte %00111100 ; CURVES
+
+       ;byte %00000000 ; CURVES
+
+       .byte %00111100 ; CURVES
+       .byte %01111110 ; CURVES
+       .byte %01100110 ; CURVES
+       .byte %01111110 ; CURVES
+       .byte %00111100 ; CURVES
+       .byte %01100110 ; CURVES
+       .byte %01111110 ; CURVES
+       .byte %00111100 ; CURVES
+
+       ;byte %00000000 ; CURVES
+
+       .byte %01111100 ; CURVES
+       .byte %01111110 ; CURVES
+       .byte %00000110 ; CURVES
+       .byte %00111110 ; CURVES
+       .byte %01111110 ; CURVES
+       .byte %01100110 ; CURVES
+       .byte %01111110 ; CURVES
+       .byte %00111100 ; CURVES
+
+ ifconst fontcharsHEX 
+LENHEX = 48
+
+       ;byte %00000000 ; CURVES
+
+       .byte %01100110 ; CURVES
+       .byte %01100110 ; CURVES
+       .byte %01111110 ; CURVES
+       .byte %01111110 ; CURVES
+       .byte %01100110 ; CURVES
+       .byte %01100110 ; CURVES
+       .byte %01111110 ; CURVES
+       .byte %00111100 ; CURVES
+
+       ;byte %00000000 ; CURVES
+
+       .byte %01111100 ; CURVES
+       .byte %01111110 ; CURVES
+       .byte %01100110 ; CURVES
+       .byte %01111110 ; CURVES
+       .byte %01111100 ; CURVES
+       .byte %01100110 ; CURVES
+       .byte %01111110 ; CURVES
+       .byte %01111100 ; CURVES
+
+       ;byte %00000000 ; CURVES
+
+       .byte %00111110 ; CURVES
+       .byte %01111110 ; CURVES
+       .byte %01100000 ; CURVES
+       .byte %01100000 ; CURVES
+       .byte %01100000 ; CURVES
+       .byte %01100000 ; CURVES
+       .byte %01111110 ; CURVES
+       .byte %00111110 ; CURVES
+
+       ;byte %00000000 ; CURVES
+
+       .byte %01111100 ; CURVES
+       .byte %01111110 ; CURVES
+       .byte %01100110 ; CURVES
+       .byte %01100110 ; CURVES
+       .byte %01100110 ; CURVES
+       .byte %01100110 ; CURVES
+       .byte %01111110 ; CURVES
+       .byte %01111100 ; CURVES
+
+       ;byte %00000000 ; CURVES
+
+       .byte %00111110 ; CURVES
+       .byte %01111110 ; CURVES
+       .byte %01100000 ; CURVES
+       .byte %01111100 ; CURVES
+       .byte %01111100 ; CURVES
+       .byte %01100000 ; CURVES
+       .byte %01111110 ; CURVES
+       .byte %00111110 ; CURVES
+
+       ;byte %00000000 ; CURVES
+
+       .byte %01100000 ; CURVES
+       .byte %01100000 ; CURVES
+       .byte %01100000 ; CURVES
+       .byte %01111100 ; CURVES
+       .byte %01111100 ; CURVES
+       .byte %01100000 ; CURVES
+       .byte %01111110 ; CURVES
+       .byte %00111110 ; CURVES
+
+       ;byte %00000000 ; CURVES
+       ;byte %00000000 ; CURVES
+       ;byte %00000000 ; CURVES
+       ;byte %00000000 ; CURVES
+
+ else
+LENHEX = 0
+ endif ; fontcharsHEX 
+ endif ; CURVES
+
+
+ if fontstyle == HUSKY
+
+LENDEC = 80
+
+       ;byte %00000000 ; HUSKY
+
+       .byte %01111100 ; HUSKY
+       .byte %11111110 ; HUSKY
+       .byte %11101110 ; HUSKY
+       .byte %11101110 ; HUSKY
+       .byte %11101110 ; HUSKY
+       .byte %11101110 ; HUSKY
+       .byte %11111110 ; HUSKY
+       .byte %01111100 ; HUSKY
+
+       ;byte %00000000 ; HUSKY
+
+       .byte %00111000 ; HUSKY
+       .byte %00111000 ; HUSKY
+       .byte %00111000 ; HUSKY
+       .byte %00111000 ; HUSKY
+       .byte %00111000 ; HUSKY
+       .byte %00111000 ; HUSKY
+       .byte %00111000 ; HUSKY
+       .byte %00111000 ; HUSKY
+
+       ;byte %00000000 ; HUSKY
+
+       .byte %11111110 ; HUSKY
+       .byte %11111110 ; HUSKY
+       .byte %11100000 ; HUSKY
+       .byte %11111100 ; HUSKY
+       .byte %01111110 ; HUSKY
+       .byte %00001110 ; HUSKY
+       .byte %11111110 ; HUSKY
+       .byte %11111100 ; HUSKY
+
+       ;byte %00000000 ; HUSKY
+
+       .byte %11111100 ; HUSKY
+       .byte %11111110 ; HUSKY
+       .byte %00001110 ; HUSKY
+       .byte %11111100 ; HUSKY
+       .byte %11111100 ; HUSKY
+       .byte %00001110 ; HUSKY
+       .byte %11111110 ; HUSKY
+       .byte %11111100 ; HUSKY
+
+       ;byte %00000000 ; HUSKY
+
+       .byte %00011100 ; HUSKY
+       .byte %00011100 ; HUSKY
+       .byte %11111110 ; HUSKY
+       .byte %11111110 ; HUSKY
+       .byte %11011100 ; HUSKY
+       .byte %11011100 ; HUSKY
+       .byte %00011100 ; HUSKY
+       .byte %00011100 ; HUSKY
+
+       ;byte %00000000 ; HUSKY
+
+       .byte %11111100 ; HUSKY
+       .byte %11111110 ; HUSKY
+       .byte %00001110 ; HUSKY
+       .byte %11111110 ; HUSKY
+       .byte %11111100 ; HUSKY
+       .byte %11100000 ; HUSKY
+       .byte %11111110 ; HUSKY
+       .byte %11111110 ; HUSKY
+
+       ;byte %00000000 ; HUSKY
+
+       .byte %01111100 ; HUSKY
+       .byte %11111110 ; HUSKY
+       .byte %11101110 ; HUSKY
+       .byte %11111110 ; HUSKY
+       .byte %11111100 ; HUSKY
+       .byte %11100000 ; HUSKY
+       .byte %11111110 ; HUSKY
+       .byte %01111110 ; HUSKY
+
+       ;byte %00000000 ; HUSKY
+
+       .byte %00111000 ; HUSKY
+       .byte %00111000 ; HUSKY
+       .byte %00111000 ; HUSKY
+       .byte %00111000 ; HUSKY
+       .byte %00011100 ; HUSKY
+       .byte %00001110 ; HUSKY
+       .byte %11111110 ; HUSKY
+       .byte %11111110 ; HUSKY
+
+       ;byte %00000000 ; HUSKY
+
+       .byte %01111100 ; HUSKY
+       .byte %11111110 ; HUSKY
+       .byte %11101110 ; HUSKY
+       .byte %11111110 ; HUSKY
+       .byte %01111100 ; HUSKY
+       .byte %11101110 ; HUSKY
+       .byte %11111110 ; HUSKY
+       .byte %01111100 ; HUSKY
+
+       ;byte %00000000 ; HUSKY
+
+       .byte %11111100 ; HUSKY
+       .byte %11111110 ; HUSKY
+       .byte %00001110 ; HUSKY
+       .byte %01111110 ; HUSKY
+       .byte %11111110 ; HUSKY
+       .byte %11101110 ; HUSKY
+       .byte %11111110 ; HUSKY
+       .byte %01111100 ; HUSKY
+
+ ifconst fontcharsHEX 
+LENHEX = 48
+
+       ;byte %00000000 ; HUSKY
+
+       .byte %11101110 ; HUSKY
+       .byte %11101110 ; HUSKY
+       .byte %11111110 ; HUSKY
+       .byte %11111110 ; HUSKY
+       .byte %11101110 ; HUSKY
+       .byte %11111110 ; HUSKY
+       .byte %01111100 ; HUSKY
+       .byte %00111000 ; HUSKY
+
+       ;byte %00000000 ; HUSKY
+
+       .byte %11111100 ; HUSKY
+       .byte %11111110 ; HUSKY
+       .byte %11101110 ; HUSKY
+       .byte %11111110 ; HUSKY
+       .byte %11111100 ; HUSKY
+       .byte %11101110 ; HUSKY
+       .byte %11111110 ; HUSKY
+       .byte %11111100 ; HUSKY
+
+       ;byte %00000000 ; HUSKY
+
+       .byte %01111110 ; HUSKY
+       .byte %11111110 ; HUSKY
+       .byte %11110000 ; HUSKY
+       .byte %11100000 ; HUSKY
+       .byte %11100000 ; HUSKY
+       .byte %11110000 ; HUSKY
+       .byte %11111110 ; HUSKY
+       .byte %01111110 ; HUSKY
+
+       ;byte %00000000 ; HUSKY
+
+       .byte %11111000 ; HUSKY
+       .byte %11111100 ; HUSKY
+       .byte %11111110 ; HUSKY
+       .byte %11101110 ; HUSKY
+       .byte %11101110 ; HUSKY
+       .byte %11111110 ; HUSKY
+       .byte %11111100 ; HUSKY
+       .byte %11111000 ; HUSKY
+
+       ;byte %00000000 ; HUSKY
+
+       .byte %11111110 ; HUSKY
+       .byte %11111110 ; HUSKY
+       .byte %11100000 ; HUSKY
+       .byte %11111110 ; HUSKY
+       .byte %11111110 ; HUSKY
+       .byte %11100000 ; HUSKY
+       .byte %11111110 ; HUSKY
+       .byte %11111110 ; HUSKY
+
+       ;byte %00000000 ; HUSKY
+
+       .byte %11100000 ; HUSKY
+       .byte %11100000 ; HUSKY
+       .byte %11100000 ; HUSKY
+       .byte %11111110 ; HUSKY
+       .byte %11111110 ; HUSKY
+       .byte %11100000 ; HUSKY
+       .byte %11111110 ; HUSKY
+       .byte %11111110 ; HUSKY
+
+       ;byte %00000000 ; HUSKY
+       ;byte %00000000 ; HUSKY
+       ;byte %00000000 ; HUSKY
+       ;byte %00000000 ; HUSKY
+
+ else
+LENHEX = 0
+ endif ; fontcharsHEX 
+ endif ; HUSKY
+
+
+ if fontstyle == SNAKE
+
+LENDEC = 80
+
+       ;byte %00000000 ; SNAKE
+
+       .byte %01111110 ; SNAKE
+       .byte %01000010 ; SNAKE
+       .byte %01000010 ; SNAKE
+       .byte %01000010 ; SNAKE
+       .byte %01000010 ; SNAKE
+       .byte %01000010 ; SNAKE
+       .byte %01000010 ; SNAKE
+       .byte %01111110 ; SNAKE
+
+       ;byte %00000000 ; SNAKE
+
+       .byte %00111000 ; SNAKE
+       .byte %00101000 ; SNAKE
+       .byte %00001000 ; SNAKE
+       .byte %00001000 ; SNAKE
+       .byte %00001000 ; SNAKE
+       .byte %00001000 ; SNAKE
+       .byte %00001000 ; SNAKE
+       .byte %00111000 ; SNAKE
+
+       ;byte %00000000 ; SNAKE
+
+       .byte %01111110 ; SNAKE
+       .byte %01000010 ; SNAKE
+       .byte %01000110 ; SNAKE
+       .byte %01000000 ; SNAKE
+       .byte %01111110 ; SNAKE
+       .byte %00000010 ; SNAKE
+       .byte %01000010 ; SNAKE
+       .byte %01111110 ; SNAKE
+
+       ;byte %00000000 ; SNAKE
+
+       .byte %01111110 ; SNAKE
+       .byte %01000010 ; SNAKE
+       .byte %01100010 ; SNAKE
+       .byte %00000010 ; SNAKE
+       .byte %01111110 ; SNAKE
+       .byte %00000010 ; SNAKE
+       .byte %01000010 ; SNAKE
+       .byte %01111110 ; SNAKE
+
+       ;byte %00000000 ; SNAKE
+
+       .byte %00001110 ; SNAKE
+       .byte %00001010 ; SNAKE
+       .byte %00000010 ; SNAKE
+       .byte %01111110 ; SNAKE
+       .byte %01000010 ; SNAKE
+       .byte %01000010 ; SNAKE
+       .byte %01000010 ; SNAKE
+       .byte %01100110 ; SNAKE
+
+       ;byte %00000000 ; SNAKE
+
+       .byte %01111110 ; SNAKE
+       .byte %01000010 ; SNAKE
+       .byte %01100010 ; SNAKE
+       .byte %00000010 ; SNAKE
+       .byte %01111110 ; SNAKE
+       .byte %01000000 ; SNAKE
+       .byte %01000010 ; SNAKE
+       .byte %01111110 ; SNAKE
+
+       ;byte %00000000 ; SNAKE
+
+       .byte %01111110 ; SNAKE
+       .byte %01000010 ; SNAKE
+       .byte %01000010 ; SNAKE
+       .byte %01111110 ; SNAKE
+       .byte %01000000 ; SNAKE
+       .byte %01000110 ; SNAKE
+       .byte %01000010 ; SNAKE
+       .byte %01111110 ; SNAKE
+
+       ;byte %00000000 ; SNAKE
+
+       .byte %00000110 ; SNAKE
+       .byte %00000010 ; SNAKE
+       .byte %00000010 ; SNAKE
+       .byte %00000010 ; SNAKE
+       .byte %00000010 ; SNAKE
+       .byte %01100010 ; SNAKE
+       .byte %01000010 ; SNAKE
+       .byte %01111110 ; SNAKE
+
+       ;byte %00000000 ; SNAKE
+
+       .byte %01111110 ; SNAKE
+       .byte %01000010 ; SNAKE
+       .byte %01000010 ; SNAKE
+       .byte %01000010 ; SNAKE
+       .byte %01111110 ; SNAKE
+       .byte %01000010 ; SNAKE
+       .byte %01000010 ; SNAKE
+       .byte %01111110 ; SNAKE
+
+       ;byte %00000000 ; SNAKE
+
+       .byte %00001110 ; SNAKE
+       .byte %00001010 ; SNAKE
+       .byte %00000010 ; SNAKE
+       .byte %00000010 ; SNAKE
+       .byte %01111110 ; SNAKE
+       .byte %01000010 ; SNAKE
+       .byte %01000010 ; SNAKE
+       .byte %01111110 ; SNAKE
+
+
+ ifconst fontcharsHEX 
+LENHEX = 48
+
+       ;byte %00000000 ; SNAKE
+
+       .byte %01100110 ; SNAKE
+       .byte %01000010 ; SNAKE
+       .byte %01000010 ; SNAKE
+       .byte %01000010 ; SNAKE
+       .byte %01111110 ; SNAKE
+       .byte %01000010 ; SNAKE
+       .byte %01000010 ; SNAKE
+       .byte %01111110 ; SNAKE
+
+       ;byte %00000000 ; SNAKE
+
+       .byte %01111110 ; SNAKE
+       .byte %01000010 ; SNAKE
+       .byte %01000010 ; SNAKE
+       .byte %01000110 ; SNAKE
+       .byte %01111100 ; SNAKE
+       .byte %01000110 ; SNAKE
+       .byte %01000010 ; SNAKE
+       .byte %01111110 ; SNAKE
+
+       ;byte %00000000 ; SNAKE
+
+       .byte %01111110 ; SNAKE
+       .byte %01000010 ; SNAKE
+       .byte %01000110 ; SNAKE
+       .byte %01000000 ; SNAKE
+       .byte %01000000 ; SNAKE
+       .byte %01000110 ; SNAKE
+       .byte %01000010 ; SNAKE
+       .byte %01111110 ; SNAKE
+
+       ;byte %00000000 ; SNAKE
+
+       .byte %01111100 ; SNAKE
+       .byte %01000110 ; SNAKE
+       .byte %01000010 ; SNAKE
+       .byte %01000010 ; SNAKE
+       .byte %01000010 ; SNAKE
+       .byte %01000010 ; SNAKE
+       .byte %01000110 ; SNAKE
+       .byte %01111100 ; SNAKE
+
+       ;byte %00000000 ; SNAKE
+
+       .byte %01111110 ; SNAKE
+       .byte %01000010 ; SNAKE
+       .byte %01000110 ; SNAKE
+       .byte %01000000 ; SNAKE
+       .byte %01111000 ; SNAKE
+       .byte %01000000 ; SNAKE
+       .byte %01000010 ; SNAKE
+       .byte %01111110 ; SNAKE
+
+       ;byte %00000000 ; SNAKE
+
+       .byte %01000000 ; SNAKE
+       .byte %01000000 ; SNAKE
+       .byte %01000000 ; SNAKE
+       .byte %01000000 ; SNAKE
+       .byte %01111000 ; SNAKE
+       .byte %01000000 ; SNAKE
+       .byte %01000010 ; SNAKE
+       .byte %01111110 ; SNAKE
+
+       ;byte %00000000 ; SNAKE
+       ;byte %00000000 ; SNAKE
+       ;byte %00000000 ; SNAKE
+       ;byte %00000000 ; SNAKE
+
+ else
+LENHEX = 0
+ endif ; fontcharsHEX 
+ endif ; SNAKE
+
+ if fontstyle == PLOK
+LENDEC = 80
+
+       ;byte %00000000 ; PLOK
+
+       .byte %00000000 ; PLOK
+       .byte %00111000 ; PLOK
+       .byte %01100100 ; PLOK
+       .byte %01100010 ; PLOK
+       .byte %01100010 ; PLOK
+       .byte %00110110 ; PLOK
+       .byte %00011100 ; PLOK
+       .byte %00000000 ; PLOK
+
+       ;byte %00000000 ; PLOK
+
+       .byte %00000000 ; PLOK
+       .byte %00010000 ; PLOK
+       .byte %00011100 ; PLOK
+       .byte %00011100 ; PLOK
+       .byte %00011000 ; PLOK
+       .byte %00111000 ; PLOK
+       .byte %00011000 ; PLOK
+       .byte %00000000 ; PLOK
+
+       ;byte %00000000 ; PLOK
+
+       .byte %00000000 ; PLOK
+       .byte %00001110 ; PLOK
+       .byte %01111110 ; PLOK
+       .byte %00011000 ; PLOK
+       .byte %00001100 ; PLOK
+       .byte %00000110 ; PLOK
+       .byte %00111100 ; PLOK
+       .byte %00000000 ; PLOK
+
+       ;byte %00000000 ; PLOK
+
+       .byte %00000000 ; PLOK
+       .byte %00111100 ; PLOK
+       .byte %01101110 ; PLOK
+       .byte %00001110 ; PLOK
+       .byte %00011100 ; PLOK
+       .byte %00000110 ; PLOK
+       .byte %01111100 ; PLOK
+       .byte %00000000 ; PLOK
+
+       ;byte %00000000 ; PLOK
+
+       .byte %00000000 ; PLOK
+       .byte %00011000 ; PLOK
+       .byte %01111110 ; PLOK
+       .byte %01101100 ; PLOK
+       .byte %00100100 ; PLOK
+       .byte %00110000 ; PLOK
+       .byte %00110000 ; PLOK
+       .byte %00000000 ; PLOK
+
+       ;byte %00000000 ; PLOK
+
+       .byte %00000000 ; PLOK
+       .byte %00111100 ; PLOK
+       .byte %01001110 ; PLOK
+       .byte %00011100 ; PLOK
+       .byte %01100000 ; PLOK
+       .byte %01111100 ; PLOK
+       .byte %00011100 ; PLOK
+       .byte %00000000 ; PLOK
+
+       ;byte %00000000 ; PLOK
+
+       .byte %00000000 ; PLOK
+       .byte %00111100 ; PLOK
+       .byte %01000110 ; PLOK
+       .byte %01101100 ; PLOK
+       .byte %01110000 ; PLOK
+       .byte %00111000 ; PLOK
+       .byte %00010000 ; PLOK
+       .byte %00000000 ; PLOK
+
+       ;byte %00000000 ; PLOK
+
+       .byte %00000000 ; PLOK
+       .byte %00111100 ; PLOK
+       .byte %00011100 ; PLOK
+       .byte %00001100 ; PLOK
+       .byte %00000110 ; PLOK
+       .byte %01111110 ; PLOK
+       .byte %00110000 ; PLOK
+       .byte %00000000 ; PLOK
+
+       ;byte %00000000 ; PLOK
+
+       .byte %00000000 ; PLOK
+       .byte %00111100 ; PLOK
+       .byte %01001110 ; PLOK
+       .byte %01101110 ; PLOK
+       .byte %00111100 ; PLOK
+       .byte %01100100 ; PLOK
+       .byte %00111000 ; PLOK
+       .byte %00000000 ; PLOK
+
+       ;byte %00000000 ; PLOK
+
+       .byte %00000000 ; PLOK
+       .byte %00011000 ; PLOK
+       .byte %00001100 ; PLOK
+       .byte %00011100 ; PLOK
+       .byte %00100110 ; PLOK
+       .byte %01001110 ; PLOK
+       .byte %00111100 ; PLOK
+       .byte %00000000 ; PLOK
+
+ ifconst fontcharsHEX 
+LENHEX = 48
+
+       ;byte %00000000 ; PLOK
+
+       .byte %00000000 ; PLOK
+       .byte %01100010 ; PLOK
+       .byte %01100110 ; PLOK
+       .byte %01111110 ; PLOK
+       .byte %00101100 ; PLOK
+       .byte %00101000 ; PLOK
+       .byte %00110000 ; PLOK
+       .byte %00000000 ; PLOK
+
+       ;byte %00000000 ; PLOK
+
+       .byte %00000000 ; PLOK
+       .byte %01111100 ; PLOK
+       .byte %00110010 ; PLOK
+       .byte %00110110 ; PLOK
+       .byte %00111100 ; PLOK
+       .byte %00110110 ; PLOK
+       .byte %01111100 ; PLOK
+       .byte %00000000 ; PLOK
+
+       ;byte %00000000 ; PLOK
+
+       .byte %00000000 ; PLOK
+       .byte %00111100 ; PLOK
+       .byte %01100110 ; PLOK
+       .byte %01100000 ; PLOK
+       .byte %01100100 ; PLOK
+       .byte %00101110 ; PLOK
+       .byte %00011100 ; PLOK
+       .byte %00000000 ; PLOK
+
+       ;byte %00000000 ; PLOK
+
+       .byte %00000000 ; PLOK
+       .byte %01111100 ; PLOK
+       .byte %00110010 ; PLOK
+       .byte %00110010 ; PLOK
+       .byte %00110110 ; PLOK
+       .byte %01111100 ; PLOK
+       .byte %01111000 ; PLOK
+       .byte %00000000 ; PLOK
+
+       ;byte %00000000 ; PLOK
+
+       .byte %00000000 ; PLOK
+       .byte %01111110 ; PLOK
+       .byte %00110000 ; PLOK
+       .byte %00111000 ; PLOK
+       .byte %00111100 ; PLOK
+       .byte %00110000 ; PLOK
+       .byte %01111110 ; PLOK
+       .byte %00000000 ; PLOK
+
+       ;byte %00000000 ; PLOK
+
+       .byte %00000000 ; PLOK
+       .byte %01100000 ; PLOK
+       .byte %01100000 ; PLOK
+       .byte %00111000 ; PLOK
+       .byte %00100000 ; PLOK
+       .byte %01111110 ; PLOK
+       .byte %00011100 ; PLOK
+       .byte %00000000 ; PLOK
+
+       ;byte %00000000 ; PLOK
+       ;byte %00000000 ; PLOK
+       ;byte %00000000 ; PLOK
+       ;byte %00000000 ; PLOK
+
+
+ else
+LENHEX = 0
+ endif ; fontcharsHEX
+ endif ; PLOK
+
+
+
+ if fontstyle == SQUISH
+
+LENDEC = 80
+
+       ;byte %00000000 ; SQUISH
+
+       .byte %00111100 ; SQUISH
+       .byte %01100110 ; SQUISH
+       .byte %01100110 ; SQUISH
+       .byte %01100110 ; SQUISH
+       .byte %00111100 ; SQUISH
+       .byte %00000000 ; SQUISH
+       .byte %00000000 ; SQUISH
+       .byte %00000000 ; SQUISH
+
+       ;byte %00000000 ; SQUISH
+
+       .byte %01111110 ; SQUISH
+       .byte %00011000 ; SQUISH
+       .byte %00011000 ; SQUISH
+       .byte %00111000 ; SQUISH
+       .byte %00011000 ; SQUISH
+       .byte %00000000 ; SQUISH
+       .byte %00000000 ; SQUISH
+       .byte %00000000 ; SQUISH
+
+       ;byte %00000000 ; SQUISH
+
+       .byte %01111110 ; SQUISH
+       .byte %01100000 ; SQUISH
+       .byte %00111100 ; SQUISH
+       .byte %00000110 ; SQUISH
+       .byte %01111100 ; SQUISH
+       .byte %00000000 ; SQUISH
+       .byte %00000000 ; SQUISH
+       .byte %00000000 ; SQUISH
+
+       ;byte %00000000 ; SQUISH
+
+       .byte %01111100 ; SQUISH
+       .byte %00000110 ; SQUISH
+       .byte %00011100 ; SQUISH
+       .byte %00000110 ; SQUISH
+       .byte %01111100 ; SQUISH
+       .byte %00000000 ; SQUISH
+       .byte %00000000 ; SQUISH
+       .byte %00000000 ; SQUISH
+
+       ;byte %00000000 ; SQUISH
+
+       .byte %00001100 ; SQUISH
+       .byte %01111110 ; SQUISH
+       .byte %01001100 ; SQUISH
+       .byte %00101100 ; SQUISH
+       .byte %00011100 ; SQUISH
+       .byte %00000000 ; SQUISH
+       .byte %00000000 ; SQUISH
+       .byte %00000000 ; SQUISH
+
+       ;byte %00000000 ; SQUISH
+
+       .byte %01111100 ; SQUISH
+       .byte %00000110 ; SQUISH
+       .byte %00111100 ; SQUISH
+       .byte %01100000 ; SQUISH
+       .byte %01111110 ; SQUISH
+       .byte %00000000 ; SQUISH
+       .byte %00000000 ; SQUISH
+       .byte %00000000 ; SQUISH
+
+       ;byte %00000000 ; SQUISH
+
+       .byte %00111100 ; SQUISH
+       .byte %01100110 ; SQUISH
+       .byte %01111100 ; SQUISH
+       .byte %01100000 ; SQUISH
+       .byte %00111100 ; SQUISH
+       .byte %00000000 ; SQUISH
+       .byte %00000000 ; SQUISH
+       .byte %00000000 ; SQUISH
+
+       ;byte %00000000 ; SQUISH
+
+       .byte %00110000 ; SQUISH
+       .byte %00011000 ; SQUISH
+       .byte %00001100 ; SQUISH
+       .byte %00000110 ; SQUISH
+       .byte %01111110 ; SQUISH
+       .byte %00000000 ; SQUISH
+       .byte %00000000 ; SQUISH
+       .byte %00000000 ; SQUISH
+
+       ;byte %00000000 ; SQUISH
+
+       .byte %00111100 ; SQUISH
+       .byte %01100110 ; SQUISH
+       .byte %00111100 ; SQUISH
+       .byte %01100110 ; SQUISH
+       .byte %00111100 ; SQUISH
+       .byte %00000000 ; SQUISH
+       .byte %00000000 ; SQUISH
+       .byte %00000000 ; SQUISH
+
+       ;byte %00000000 ; SQUISH
+
+       .byte %00111100 ; SQUISH
+       .byte %00000110 ; SQUISH
+       .byte %00111110 ; SQUISH
+       .byte %01100110 ; SQUISH
+       .byte %00111100 ; SQUISH
+       .byte %00000000 ; SQUISH
+       .byte %00000000 ; SQUISH
+       .byte %00000000 ; SQUISH
+
+       ;byte %00000000 ; SQUISH
+
+ ifconst fontcharsHEX 
+LENHEX = 48
+
+       .byte %01100110 ; SQUISH
+       .byte %01100110 ; SQUISH
+       .byte %01111110 ; SQUISH
+       .byte %01100110 ; SQUISH
+       .byte %00111100 ; SQUISH
+       .byte %00000000 ; SQUISH
+       .byte %00000000 ; SQUISH
+       .byte %00000000 ; SQUISH
+
+       ;byte %00000000 ; SQUISH
+
+       .byte %01111100 ; SQUISH
+       .byte %01100110 ; SQUISH
+       .byte %01111100 ; SQUISH
+       .byte %01100110 ; SQUISH
+       .byte %01111100 ; SQUISH
+       .byte %00000000 ; SQUISH
+       .byte %00000000 ; SQUISH
+       .byte %00000000 ; SQUISH
+
+       ;byte %00000000 ; SQUISH
+
+       .byte %00111100 ; SQUISH
+       .byte %01100110 ; SQUISH
+       .byte %01100000 ; SQUISH
+       .byte %01100110 ; SQUISH
+       .byte %00111100 ; SQUISH
+       .byte %00000000 ; SQUISH
+       .byte %00000000 ; SQUISH
+       .byte %00000000 ; SQUISH
+
+       ;byte %00000000 ; SQUISH
+
+       .byte %01111100 ; SQUISH
+       .byte %01100110 ; SQUISH
+       .byte %01100110 ; SQUISH
+       .byte %01100110 ; SQUISH
+       .byte %01111100 ; SQUISH
+       .byte %00000000 ; SQUISH
+       .byte %00000000 ; SQUISH
+       .byte %00000000 ; SQUISH
+
+       ;byte %00000000 ; SQUISH
+
+       .byte %01111110 ; SQUISH
+       .byte %01100000 ; SQUISH
+       .byte %01111100 ; SQUISH
+       .byte %01100000 ; SQUISH
+       .byte %01111110 ; SQUISH
+       .byte %00000000 ; SQUISH
+       .byte %00000000 ; SQUISH
+       .byte %00000000 ; SQUISH
+
+       ;byte %00000000 ; SQUISH
+
+       .byte %01100000 ; SQUISH
+       .byte %01100000 ; SQUISH
+       .byte %01111100 ; SQUISH
+       .byte %01100000 ; SQUISH
+       .byte %01111110 ; SQUISH
+       .byte %00000000 ; SQUISH
+       .byte %00000000 ; SQUISH
+       .byte %00000000 ; SQUISH
+
+       ;byte %00000000 ; SQUISH
+       ;byte %00000000 ; SQUISH
+       ;byte %00000000 ; SQUISH
+       ;byte %00000000 ; SQUISH
+
+ else
+LENHEX = 0
+ endif ; fontcharsHEX 
+ endif ; SQUISH
+
+
+
+
+
+
+ if fontstyle == NOFONT
+LENDEC = 0
+LENHEX = 0
+ endif ; NOFONT
+
+
+; ### any characters that aren't font specific follow... 
+
+ ifconst fontcharSPACE
+LENSPACE = 8
+       ;byte %00000000 ; SYMBOLS
+
+       .byte %00000000 ; SYMBOLS
+       .byte %00000000 ; SYMBOLS
+       .byte %00000000 ; SYMBOLS
+       .byte %00000000 ; SYMBOLS
+       .byte %00000000 ; SYMBOLS
+       .byte %00000000 ; SYMBOLS
+       .byte %00000000 ; SYMBOLS
+       .byte %00000000 ; SYMBOLS
+
+       ;byte %00000000 ; SYMBOLS
+ else
+LENSPACE = 0
+ endif ; fontcharSPACE
+
+ ifconst fontcharDOLLAR
+LENDOLLAR = 8
+       ;byte %00000000 ; SYMBOLS
+
+       .byte %00000000 ; SYMBOLS
+       .byte %00010000 ; SYMBOLS
+       .byte %01111100 ; SYMBOLS
+       .byte %00010010 ; SYMBOLS
+       .byte %01111100 ; SYMBOLS
+       .byte %10010000 ; SYMBOLS
+       .byte %01111100 ; SYMBOLS
+       .byte %00010000 ; SYMBOLS
+
+       ;byte %00000000 ; SYMBOLS
+
+ else
+LENDOLLAR = 0
+ endif ; fontcharDOLLAR
+
+ ifconst fontcharPOUND
+LENPOUND = 8
+       ;byte %00000000 ; SYMBOLS
+
+       .byte %01111110 ; SYMBOLS
+       .byte %01000000 ; SYMBOLS
+       .byte %00100000 ; SYMBOLS
+       .byte %00100000 ; SYMBOLS
+       .byte %01111000 ; SYMBOLS
+       .byte %00100000 ; SYMBOLS
+       .byte %00100010 ; SYMBOLS
+       .byte %00011100 ; SYMBOLS
+
+       ;byte %00000000 ; SYMBOLS
+
+ else
+LENPOUND = 0
+ endif ; fontcharPOUND
+
+
+ ifconst fontcharMRHAPPY
+LENMRHAPPY = 8
+       ;byte %00000000 ; SYMBOLS
+
+       .byte %00111100 ; SYMBOLS
+       .byte %01100110 ; SYMBOLS
+       .byte %01011010 ; SYMBOLS
+       .byte %01111110 ; SYMBOLS
+       .byte %01111110 ; SYMBOLS
+       .byte %01011010 ; SYMBOLS
+       .byte %01111110 ; SYMBOLS
+       .byte %00111100 ; SYMBOLS
+
+       ;byte %00000000 ; SYMBOLS
+
+ else
+LENMRHAPPY = 0
+ endif ; fontcharMRHAPPY
+
+ ifconst fontcharMRSAD
+LENMRSAD = 8
+       ;byte %00000000 ; SYMBOLS
+
+       .byte %00111100 ; SYMBOLS
+       .byte %01011010 ; SYMBOLS
+       .byte %01100110 ; SYMBOLS
+       .byte %01111110 ; SYMBOLS
+       .byte %01111110 ; SYMBOLS
+       .byte %01011010 ; SYMBOLS
+       .byte %01111110 ; SYMBOLS
+       .byte %00111100 ; SYMBOLS
+
+       ;byte %00000000 ; SYMBOLS
+
+ else
+LENMRSAD = 0
+ endif ; fontcharMRSAD
+
+
+ ifconst fontcharCOPYRIGHT
+LENCOPYRIGHT = 8
+       ;byte %00000000 ; SYMBOLS
+
+       .byte %00000000 ; SYMBOLS
+       .byte %00111000 ; SYMBOLS
+       .byte %01000100 ; SYMBOLS
+       .byte %10111010 ; SYMBOLS
+       .byte %10100010 ; SYMBOLS
+       .byte %10111010 ; SYMBOLS
+       .byte %01000100 ; SYMBOLS
+       .byte %00111000 ; SYMBOLS
+
+       ;byte %00000000 ; SYMBOLS
+
+ else
+LENCOPYRIGHT = 0
+ endif ; fontcharCOPYRIGHT
+
+
+ ifconst fontcharFUJI
+LENFUJI = 16
+
+       ;byte %00000000 ; ** these commented-out blanks are for the preview generation program
+
+       .byte %01110000 ; SYMBOLS
+       .byte %01111001 ; SYMBOLS
+       .byte %00011101 ; SYMBOLS
+       .byte %00001101 ; SYMBOLS
+       .byte %00001101 ; SYMBOLS
+       .byte %00001101 ; SYMBOLS
+       .byte %00001101 ; SYMBOLS
+       .byte %00000000 ; SYMBOLS
+
+       ;byte %00000000 ; SYMBOLS
+
+       .byte %00001110 ; SYMBOLS
+       .byte %10011110 ; SYMBOLS
+       .byte %10111000 ; SYMBOLS
+       .byte %10110000 ; SYMBOLS
+       .byte %10110000 ; SYMBOLS
+       .byte %10110000 ; SYMBOLS
+       .byte %10110000 ; SYMBOLS
+       .byte %00000000 ; SYMBOLS
+
+       ;byte %00000000 ; SYMBOLS
+
+ else
+LENFUJI = 0
+ endif ; fontcharFUJI
+
+
+ ifconst fontcharHEART
+LENHEART = 8
+       ;byte %00000000 ; SYMBOLS
+
+       .byte %00010000 ; SYMBOLS
+       .byte %00111000 ; SYMBOLS
+       .byte %01111100 ; SYMBOLS
+       .byte %01111100 ; SYMBOLS
+       .byte %11111110 ; SYMBOLS
+       .byte %11111110 ; SYMBOLS
+       .byte %11101110 ; SYMBOLS
+       .byte %01000100 ; SYMBOLS
+
+       ;byte %00000000 ; SYMBOLS
+
+ else
+LENHEART = 0
+ endif ; fontcharHEART
+
+ ifconst fontcharDIAMOND
+LENDIAMOND = 8
+       ;byte %00000000 ; SYMBOLS
+
+       .byte %00010000 ; SYMBOLS
+       .byte %00111000 ; SYMBOLS
+       .byte %01111100 ; SYMBOLS
+       .byte %11111110 ; SYMBOLS
+       .byte %11111110 ; SYMBOLS
+       .byte %01111100 ; SYMBOLS
+       .byte %00111000 ; SYMBOLS
+       .byte %00010000 ; SYMBOLS
+
+       ;byte %00000000 ; SYMBOLS
+
+ else
+LENDIAMOND = 0
+ endif ; fontcharDIAMOND
+
+ ifconst fontcharSPADE
+LENSPADE = 8
+       ;byte %00000000 ; SYMBOLS
+
+       .byte %00111000 ; SYMBOLS
+       .byte %00010000 ; SYMBOLS
+       .byte %01010100 ; SYMBOLS
+       .byte %11111110 ; SYMBOLS
+       .byte %11111110 ; SYMBOLS
+       .byte %01111100 ; SYMBOLS
+       .byte %00111000 ; SYMBOLS
+       .byte %00010000 ; SYMBOLS
+
+       ;byte %00000000 ; SYMBOLS
+
+ else
+LENSPADE = 0
+ endif ; fontcharSPADE
+
+ ifconst fontcharCLUB
+LENCLUB = 8
+       ;byte %00000000 ; SYMBOLS
+
+       .byte %00111000 ; SYMBOLS
+       .byte %00010000 ; SYMBOLS
+       .byte %11010110 ; SYMBOLS
+       .byte %11111110 ; SYMBOLS
+       .byte %11010110 ; SYMBOLS
+       .byte %00111000 ; SYMBOLS
+       .byte %00111000 ; SYMBOLS
+       .byte %00000000 ; SYMBOLS
+
+       ;byte %00000000 ; SYMBOLS
+
+ else
+LENCLUB = 0
+ endif ; fontcharCLUB
+
+
+ ifconst fontcharCOLON
+LENCOLON = 8
+       ;byte %00000000 ; SYMBOLS
+
+       .byte %00000000 ; SYMBOLS
+       .byte %00011000 ; SYMBOLS
+       .byte %00011000 ; SYMBOLS
+       .byte %00000000 ; SYMBOLS
+       .byte %00000000 ; SYMBOLS
+       .byte %00011000 ; SYMBOLS
+       .byte %00011000 ; SYMBOLS
+       .byte %00000000 ; SYMBOLS
+
+       ;byte %00000000 ; SYMBOLS
+
+ else
+LENCOLON = 0
+ endif ; fontcharCOLON
+
+
+ ifconst fontcharBLOCK
+LENBLOCK = 8
+
+       ;byte %00000000 ; SYMBOLS
+
+       .byte %11111111 ; SYMBOLS
+       .byte %11111111 ; SYMBOLS
+       .byte %11111111 ; SYMBOLS
+       .byte %11111111 ; SYMBOLS
+       .byte %11111111 ; SYMBOLS
+       .byte %11111111 ; SYMBOLS
+       .byte %11111111 ; SYMBOLS
+       .byte %11111111 ; SYMBOLS
+
+       ;byte %00000000 ; SYMBOLS
+
+ else
+LENBLOCK = 0
+ endif ; fontcharBLOCK
+
+ ifconst fontcharUNDERLINE
+LENUNDERLINE = 8
+
+       ;byte %00000000 ; SYMBOLS
+
+       .byte %11111111 ; SYMBOLS
+       .byte %00000000 ; SYMBOLS
+       .byte %00000000 ; SYMBOLS
+       .byte %00000000 ; SYMBOLS
+       .byte %00000000 ; SYMBOLS
+       .byte %00000000 ; SYMBOLS
+       .byte %00000000 ; SYMBOLS
+       .byte %00000000 ; SYMBOLS
+
+       ;byte %00000000 ; SYMBOLS
+
+ else
+LENUNDERLINE = 0
+ endif ; fontcharUNDERLINE
+
+ ifconst fontcharARISIDE
+LENARISIDE = 8
+       ;byte %00000000 ; SYMBOLS
+
+       .byte %00000000 ; SYMBOLS
+       .byte %00101010 ; SYMBOLS
+       .byte %00101010 ; SYMBOLS
+       .byte %00101100 ; SYMBOLS
+       .byte %01111111 ; SYMBOLS
+       .byte %00110111 ; SYMBOLS
+       .byte %00000010 ; SYMBOLS
+       .byte %00000001 ; SYMBOLS
+
+       ;byte %00000000 ; SYMBOLS
+
+ else
+LENARISIDE = 0
+ endif ; fontcharARISIDE
+
+ ifconst fontcharARIFACE
+LENARIFACE = 8
+       ;byte %00000000 ; SYMBOLS
+
+       .byte %00001000 ; SYMBOLS
+       .byte %00011100 ; SYMBOLS
+       .byte %00111110 ; SYMBOLS
+       .byte %00101010 ; SYMBOLS
+       .byte %00011100 ; SYMBOLS
+       .byte %01010100 ; SYMBOLS
+       .byte %00100100 ; SYMBOLS
+       .byte %00000010 ; SYMBOLS
+
+       ;byte %00000000 ; SYMBOLS
+
+
+ else
+LENARIFACE = 0
+ endif ; fontcharARIRACE
+
+       ;byte %00000000 ; SYMBOLS
+       ;byte %00000000 ; SYMBOLS
+       ;byte %00000000 ; SYMBOLS
+       ;byte %00000000 ; SYMBOLS
+
+scoretableend
+
+ ifconst ROM2k
+   ORG $F7FC
+ else
+   ifconst bankswitch
+     if bankswitch == 8
+       ORG $2FF4-bscode_length
+       RORG $FFF4-bscode_length
+     endif
+     if bankswitch == 16
+       ORG $4FF4-bscode_length
+       RORG $FFF4-bscode_length
+     endif
+     if bankswitch == 32
+       ORG $8FF4-bscode_length
+       RORG $FFF4-bscode_length
+     endif
+   else
+     ORG $FFFC
+   endif
+ endif
+; Provided under the CC0 license. See the included LICENSE.txt for details.
+
+ ifconst bankswitch
+   if bankswitch == 8
+     ORG $2FFC
+     RORG $FFFC
+   endif
+   if bankswitch == 16
+     ORG $4FFC
+     RORG $FFFC
+   endif
+   if bankswitch == 32
+     ORG $8FFC
+     RORG $FFFC
+   endif
+   if bankswitch == 64
+     ORG  $10FF0
+     RORG $1FFF0
+     lda $ffe0 ; we use wasted space to assist stella with EF format auto-detection
+     ORG  $10FF8
+     RORG $1FFF8
+     ifconst superchip 
+       .byte "E","F","S","C"
+     else
+       .byte "E","F","E","F"
+     endif
+     ORG  $10FFC
+     RORG $1FFFC
+   endif
+ else
+   ifconst ROM2k
+     ORG $F7FC
+   else
+     ORG $FFFC
+   endif
+ endif
+ .word (start & $ffff)
+ .word (start & $ffff)

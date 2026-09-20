@@ -1,0 +1,6 @@
+ dim a doorctl
+ dim b tick
+ dim c sec
+ dim d nightcount
+mainloop
+    if joy0left then doorctl{1}=!doorctl{1}
