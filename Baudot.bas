@@ -108,5 +108,5 @@ waitcommit
    __sp, __lp, __sp, __sp, __sp, __sp, __sp, __sp, __sp, __sp, __sp
 end
 
- inline "text12a.asm"
- inline "text12b.asm"
+ inline text12a.asm
+ inline text12b.asm
