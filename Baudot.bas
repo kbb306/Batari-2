@@ -38,11 +38,16 @@ mainloop
   drawscreen
 
 ; Toggle the five actual Baudot bits (0-4), once per press.
- if joy0left then BaudByte{0} = !BaudByte{0}\n if joy0left then goto waitleft
- if joy0right then BaudByte{1} = !BaudByte{1}\n if joy0right then goto waitright
- if joy0up then BaudByte{2} = !BaudByte{2}\n if joy0up then goto waitup
- if joy0down then BaudByte{3} = !BaudByte{3}\n if joy0down then goto waitdown
- if joy0fire then BaudByte{4} = !BaudByte{4}\n if joy0fire then goto waitfire
+ if joy0left then BaudByte{0} = !BaudByte{0}
+ if joy0left then goto waitleft
+ if joy0right then BaudByte{1} = !BaudByte{1}
+ if joy0right then goto waitright
+ if joy0up then BaudByte{2} = !BaudByte{2}
+ if joy0up then goto waitup
+ if joy0down then BaudByte{3} = !BaudByte{3}
+ if joy0down then goto waitdown
+ if joy0fire then BaudByte{4} = !BaudByte{4}
+ if joy0fire then goto waitfire
 
 ; Player 1 fire is the STROBE / commit input.
  if joy1fire then goto commit
@@ -79,8 +84,10 @@ commit
  BaudByte = 0
 
 ; ITA2 shift characters do not print; they change the active table.
- if index = 27 then ShiftMode = 1\n if index = 27 then goto waitcommit
- if index = 31 then ShiftMode = 0\n if index = 31 then goto waitcommit
+ if index = 27 then ShiftMode = 1
+ if index = 27 then goto waitcommit
+ if index = 31 then ShiftMode = 0
+ if index = 31 then goto waitcommit
 
 ; Letters occupy 0-31; figures occupy the second 32-entry half.
  if ShiftMode = 1 then index = index + 32
